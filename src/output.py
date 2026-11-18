@@ -15,6 +15,7 @@ def build_area_yield(
     fx_rates: dict[str, float],
     fx_date: str,
     source_names: list[str],
+    sample: dict | None = None,
 ) -> dict:
     currency = group.sale_listings[0].currency if group.sale_listings else "EUR"
 
@@ -62,6 +63,7 @@ def build_area_yield(
             "eurToLocal": round(rate, 4) if currency != "EUR" else 1.0,
         },
         "priceBasis": "asking",
+        "sample": sample,
         "sources": source_names,
         "computedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
@@ -135,6 +137,7 @@ def build_side_summary(
     requests: int,
     blocked: int,
     time_s: float,
+    sample: dict | None = None,
 ) -> dict:
     """RUN_SUMMARY entry for one city x market side."""
     rejected = dict(parse_rejected)
@@ -153,5 +156,6 @@ def build_side_summary(
         "fallbackToHtml": fetch_stats.get("fallback_to_html", False),
         "districts": fetch_stats.get("districts"),
         "districtSource": fetch_stats.get("district_source"),
+        "sample": sample,
         "timeS": round(time_s, 1),
     }

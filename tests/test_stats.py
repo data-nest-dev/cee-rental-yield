@@ -214,3 +214,45 @@ class TestGateCoverage:
     def test_unscoreable_sales_are_excluded(self) -> None:
         ls = _many([("sale", 10, "A", 2), ("rent", 30, "A", 2)])
         assert gate_coverage(ls) == {}
+
+
+class TestSampleAge:
+    AS_OF = date(2026, 11, 18)
+
+    def _aged(self, days: list[int | None], tx: str = "sale", district: str = "A") -> list[Listing]:
+        out = []
+        for i, d in enumerate(days):
+            ls = _cov_listing(tx, district, 2, i)
+            ls.first_published = None if d is None else date.fromordinal(self.AS_OF.toordinal() - d)
+            out.append(ls)
+        return out
+
+    def test_median_oldest_and_share(self) -> None:
+        from src.stats import sample_stats
+        s = sample_stats(self._aged([1, 3, 10, None]), self.AS_OF, fetched=300, total=1200)
+        assert s == {"medianAgeDays": 3, "oldestListingDays": 10, "share": 0.25,
+                     "fetched": 300, "totalItems": 1200}
+
+    def test_unknown_total_and_no_dates(self) -> None:
+        from src.stats import sample_stats
+        s = sample_stats(self._aged([None]), self.AS_OF, fetched=5, total=None)
+        assert s["medianAgeDays"] is None and s["oldestListingDays"] is None and s["share"] is None
+
+    def test_future_publication_counts_as_zero_days(self) -> None:
+        from src.stats import sample_stats
+        assert sample_stats(self._aged([-2, 4]), self.AS_OF, 2, 2)["medianAgeDays"] == 2
+
+    def test_area_sample_uses_district_or_city_scope(self) -> None:
+        from src.stats import SideCoverage, area_sample
+        ls = self._aged([2] * 15, "sale", "A") + self._aged([6] * 10, "rent", "A")
+        cov = {
+            "sale": SideCoverage(fetched=600, total=2000, fetched_by_district={"A": 150}, total_by_district={"A": 300}),
+            "rent": SideCoverage(fetched=400, total=800, fetched_by_district={"A": 40}, total_by_district={}),
+        }
+        groups = {g.group_level: g for g in compute_groups(ls)}
+        district = area_sample(groups["district"], self.AS_OF, cov)
+        assert district["sale"]["share"] == 0.5 and district["sale"]["medianAgeDays"] == 2
+        assert district["rent"]["share"] is None  # district total unknown (city-wide mode)
+        assert district["rent"]["medianAgeDays"] == 6
+        city = area_sample(groups["city_rooms"], self.AS_OF, cov)
+        assert city["sale"]["share"] == 0.3 and city["rent"]["share"] == 0.5

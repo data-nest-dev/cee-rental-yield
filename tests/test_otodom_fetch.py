@@ -230,3 +230,35 @@ def test_sort_and_page_size_configurable_in_code() -> None:
     src._build_id = "B"
     url = src._next_data_url(CITY, "sprzedaz", 2)
     assert "by=DEFAULT" in url and "limit=36" in url and "page=2" in url
+
+
+@pytest.mark.asyncio
+async def test_records_totals_and_fetched_counts_per_district() -> None:
+    page1 = [_item("a1", "bogucice")]
+    http = FakeHttp({
+        f"https://www.otodom.pl/pl/wyniki/sprzedaz/mieszkanie/{CITY}": [
+            (200, _html("B1", page1, 9, districts=["bogucice", "dab"], total_items=600)),
+        ],
+        _district_page("bogucice", 1): [(200, _json([_item("a1", "bogucice"), _item("a2", "bogucice")], 1, total_items=2))],
+        _district_page("dab", 1): [(200, _json([_item("d1", "dab"), _item("a3", "bogucice")], 1, total_items=40))],
+    })
+    _, stats = await OtodomSource(http).fetch_listings("katowice", "sale", 1500, max_per_district=300)
+
+    assert stats["total_items"] == 600
+    assert stats["fetched_items"] == 4
+    assert stats["district_total_items"] == {"bogucice": 2, "dab": 40}
+    # a3 came from the dab page but is geocoded to bogucice
+    assert stats["fetched_by_district"] == {"bogucice": 3, "dab": 1}
+
+
+@pytest.mark.asyncio
+async def test_city_wide_mode_records_city_total_only() -> None:
+    http = FakeHttp({
+        f"https://www.otodom.pl/pl/wyniki/sprzedaz/mieszkanie/{CITY}": [
+            (200, _html("B1", [_item("a1", "bogucice"), _item("b1", "dab")], 1, total_items=2)),
+        ],
+    })
+    _, stats = await OtodomSource(http).fetch_listings("katowice", "sale", 1500)
+    assert stats["total_items"] == 2
+    assert stats["fetched_by_district"] == {"bogucice": 1, "dab": 1}
+    assert "district_total_items" not in stats

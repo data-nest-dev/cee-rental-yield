@@ -139,3 +139,16 @@ class TestSideSummary:
         assert summary["pages"] == 3
         assert summary["districtSource"] == "related_locations"
         assert summary["timeS"] == 4.0
+
+
+class TestSampleInRecords:
+    def test_area_yield_carries_sample(self) -> None:
+        sample = {"sale": {"medianAgeDays": 4}, "rent": {"medianAgeDays": 9}}
+        result = build_area_yield(_make_group(), {"PLN": 4.4}, "2026-11-17", ["otodom"], sample=sample)
+        assert result["sample"] == sample
+
+    def test_side_summary_carries_sample(self) -> None:
+        from src.output import build_side_summary
+        sample = {"medianAgeDays": 3, "oldestListingDays": 40, "share": 0.25}
+        summary = build_side_summary({}, {}, {}, 0, 0, 0, 0.0, sample=sample)
+        assert summary["sample"] == sample
