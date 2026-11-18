@@ -260,8 +260,9 @@ def parse_otodom_items(
 
     for raw in raw_items:
         # Strip PII immediately
+        # relatedAds: unit ads nested in INVESTMENT tiles, each with its own owner and address
         for pii_key in ("advertOwner", "organisationAssignedMember", "agency",
-                        "images", "title", "shortDescription"):
+                        "images", "title", "shortDescription", "relatedAds"):
             raw.pop(pii_key, None)
         addr = raw.get("location", {}).get("address", {})
         addr.pop("street", None)
@@ -272,7 +273,6 @@ def parse_otodom_items(
             reject("ad_insert")
             continue
 
-        # Only flats
         if raw.get("estate") != "FLAT":
             reject("not_flat")
             continue

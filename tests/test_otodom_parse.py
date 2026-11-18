@@ -107,3 +107,15 @@ class TestOtodomSaleParsing:
         # Admin fees should be much smaller than sale prices
         for ls in with_fee:
             assert ls.admin_fee_local < ls.price_local
+
+
+class TestInvestmentTiles:
+    def setup_method(self) -> None:
+        self.raw = _load_fixture("otodom_sale_katowice.json")
+        self.cfg = CITIES["katowice"]
+
+    def test_related_ads_and_owner_data_stripped(self) -> None:
+        parse_otodom_items(self.raw, self.cfg, "sale")
+        for item in self.raw:
+            for key in ("relatedAds", "advertOwner", "agency", "organisationAssignedMember"):
+                assert key not in item

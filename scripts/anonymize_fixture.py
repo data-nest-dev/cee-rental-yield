@@ -19,54 +19,50 @@ def anonymize_otodom(data: dict) -> dict:
         .get("items", [])
     )
     for i, item in enumerate(items):
-        # advertOwner
-        if "advertOwner" in item:
-            owner = item["advertOwner"]
-            if isinstance(owner, dict):
-                name = owner.get("name", "")
-                if name:
-                    owner["name"] = f"Osoba Prywatna {i}" if "prywat" in name.lower() else f"Agent Testowy {i}"
-                owner["imageUrl"] = ""
-                for c in owner.get("contacts", []):
-                    c["name"] = f"Kontakt Testowy {i}"
-                    c["imageURLSmall"] = ""
-                    c.pop("phone", None)
-                    c.pop("email", None)
-
-        # organisationAssignedMember
-        if "organisationAssignedMember" in item:
-            m = item["organisationAssignedMember"]
-            if isinstance(m, dict):
-                m["name"] = f"Agent Testowy {i}"
-                m["imageUrl"] = ""
-                m.pop("phone", None)
-                m.pop("email", None)
-
-        # agency
-        if "agency" in item:
-            a = item["agency"]
-            if isinstance(a, dict):
-                a["name"] = f"Agencja Testowa {i}"
-                a["slug"] = f"agencja-testowa-{i}"
-                a["imageUrl"] = ""
-                a.pop("phone", None)
-                a.pop("email", None)
-
-        # Trim images to max 1
-        imgs = item.get("images", [])
-        if imgs and len(imgs) > 1:
-            item["images"] = imgs[:1]
-
-        # Remove street address
-        addr = item.get("location", {}).get("address", {})
-        if "street" in addr:
-            addr["street"] = {"name": None, "number": None}
-
-        # Remove map details
-        loc = item.get("location", {})
-        loc.pop("mapDetails", None)
-
+        _anonymize_ad(item, str(i))
+        # INVESTMENT tiles embed full unit ads, each with its own owner, agency and address
+        for j, child in enumerate(item.get("relatedAds") or []):
+            _anonymize_ad(child, f"{i}-{j}")
     return data
+
+
+def _anonymize_ad(item: dict, n: str) -> None:
+    owner = item.get("advertOwner")
+    if isinstance(owner, dict):
+        name = owner.get("name", "")
+        if name:
+            owner["name"] = f"Osoba Prywatna {n}" if "prywat" in name.lower() else f"Agent Testowy {n}"
+        owner["imageUrl"] = ""
+        for c in owner.get("contacts", []):
+            c["name"] = f"Kontakt Testowy {n}"
+            c["imageURLSmall"] = ""
+            c.pop("phone", None)
+            c.pop("email", None)
+
+    m = item.get("organisationAssignedMember")
+    if isinstance(m, dict):
+        m["name"] = f"Agent Testowy {n}"
+        m["imageUrl"] = ""
+        m.pop("phone", None)
+        m.pop("email", None)
+
+    a = item.get("agency")
+    if isinstance(a, dict):
+        a["name"] = f"Agencja Testowa {n}"
+        a["slug"] = f"agencja-testowa-{n}"
+        a["imageUrl"] = ""
+        a.pop("phone", None)
+        a.pop("email", None)
+
+    imgs = item.get("images", [])
+    if imgs and len(imgs) > 1:
+        item["images"] = imgs[:1]
+
+    loc = item.get("location") or {}
+    addr = loc.get("address") or {}
+    if "street" in addr:
+        addr["street"] = {"name": None, "number": None}
+    loc.pop("mapDetails", None)
 
 
 def main() -> None:
