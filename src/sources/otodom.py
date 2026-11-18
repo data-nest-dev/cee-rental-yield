@@ -139,11 +139,11 @@ class OtodomSource:
             stats["build_id_refreshes"] += 1
             new_build_id = await self._refresh_build_id(cfg, tx)
             if new_build_id and new_build_id != self._build_id:
-                self._build_id = new_build_id
                 full_url_new = full_url.replace(
                     f"/_next/data/{self._build_id}/",
                     f"/_next/data/{new_build_id}/",
                 )
+                self._build_id = new_build_id
                 status, body = await self._http.get(full_url_new, headers=headers)
                 if status == 404:
                     return None
