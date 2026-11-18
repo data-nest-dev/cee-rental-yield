@@ -25,6 +25,11 @@ FLOOR_MAP = {
 
 DOMAIN = "www.otodom.pl"
 BASE_URL = f"https://{DOMAIN}"
+# LATEST orders by first publication: stable pagination, unlike DEFAULT (ordered by paid bumps).
+SORT_BY = "LATEST"
+SORT_DIRECTION = "DESC"
+# 72 is the largest page size Otodom honours; larger values silently fall back to 36.
+PAGE_LIMIT = 72
 USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/131.0 Safari/537.36"
@@ -32,9 +37,18 @@ USER_AGENT = (
 
 
 class OtodomSource:
-    def __init__(self, http: HttpClient) -> None:
+    def __init__(
+        self,
+        http: HttpClient,
+        sort_by: str = SORT_BY,
+        direction: str = SORT_DIRECTION,
+        page_limit: int = PAGE_LIMIT,
+    ) -> None:
         self._http = http
         self._build_id: str | None = None
+        self.sort_by = sort_by
+        self.direction = direction
+        self.page_limit = page_limit
 
     async def fetch_listings(
         self,
@@ -54,9 +68,15 @@ class OtodomSource:
             "fallback_to_html": False,
         }
 
-        page1_items, pagination, build_id, district_list = await self._fetch_first_page(cfg, tx)
+        page1_items, pagination, build_id, district_list, ordered = await self._fetch_first_page(cfg, tx)
         self._build_id = build_id
         stats["pages_fetched"] = 1
+        stats["page1_refetched"] = False
+        if not ordered:
+            # The HTML page ignored our sort or page size; take page 1 from the JSON route instead.
+            page1_items, pagination = await self._fetch_page(cfg.location_path, tx, 1, stats)
+            stats["pages_fetched"] += 1
+            stats["page1_refetched"] = True
         stats["raw_items"] = len(page1_items)
         all_items = list(page1_items)
 
@@ -116,10 +136,25 @@ class OtodomSource:
 
         return all_items, stats
 
+    def _order_params(self) -> list[str]:
+        return [f"limit={self.page_limit}", f"by={self.sort_by}", f"direction={self.direction}"]
+
+    def _is_ordered(self, page_props: dict) -> bool:
+        sorting = page_props.get("sortingOption") or {}
+        per_page = page_props.get("data", {}).get("searchAds", {}).get("pagination", {}).get("itemsPerPage")
+        return (
+            sorting.get("by") == self.sort_by
+            and sorting.get("direction") == self.direction
+            and per_page == self.page_limit
+        )
+
     async def _fetch_first_page(
         self, cfg: CityConfig, tx: str,
-    ) -> tuple[list[dict], dict, str, list[str]]:
-        url = f"{BASE_URL}/pl/wyniki/{tx}/mieszkanie/{cfg.location_path}"
+    ) -> tuple[list[dict], dict, str, list[str], bool]:
+        url = (
+            f"{BASE_URL}/pl/wyniki/{tx}/mieszkanie/{cfg.location_path}?"
+            + "&".join(self._order_params())
+        )
         headers = {"User-Agent": USER_AGENT}
         status, body = await self._http.get(url, headers=headers)
 
@@ -134,6 +169,7 @@ class OtodomSource:
             search_ads.get("pagination", {}),
             build_id,
             district_paths(page_props, cfg.location_path),
+            self._is_ordered(page_props),
         )
 
     async def _fetch_page(
@@ -149,9 +185,8 @@ class OtodomSource:
 
     def _next_data_url(self, location_path: str, tx: str, page: int) -> str:
         # curl_cffi can't send repeated params from a dict; build the query by hand
-        param_parts = [
-            f"page={page}", "limit=36", "ownerTypeSingleSelect=ALL",
-            "by=DEFAULT", "direction=DESC", "distanceRadius=0",
+        param_parts = [f"page={page}"] + self._order_params() + [
+            "ownerTypeSingleSelect=ALL", "distanceRadius=0",
         ]
         for sc in [tx, "mieszkanie"] + location_path.split("/"):
             param_parts.append(f"searchingCriteria={sc}")
@@ -195,7 +230,10 @@ class OtodomSource:
     async def _fetch_html_page(
         self, location_path: str, tx: str, page: int,
     ) -> tuple[list[dict], dict]:
-        url = f"{BASE_URL}/pl/wyniki/{tx}/mieszkanie/{location_path}?page={page}"
+        url = (
+            f"{BASE_URL}/pl/wyniki/{tx}/mieszkanie/{location_path}?page={page}&"
+            + "&".join(self._order_params())
+        )
         headers = {"User-Agent": USER_AGENT}
         status, body = await self._http.get(url, headers=headers)
         if status != 200:

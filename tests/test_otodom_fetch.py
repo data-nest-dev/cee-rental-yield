@@ -23,19 +23,35 @@ def _item(slug: str, district: str, estate: str = "FLAT") -> dict:
     }
 
 
-def _html(build_id: str, items: list[dict], total_pages: int, districts: list[str] | None = None) -> str:
-    page_data: dict = {"searchAds": {"items": items, "pagination": {"totalPages": total_pages}}}
+def _html(
+    build_id: str,
+    items: list[dict],
+    total_pages: int,
+    districts: list[str] | None = None,
+    sorting: tuple[str, str, int] = ("LATEST", "DESC", 72),
+    total_items: int | None = None,
+) -> str:
+    by, direction, per_page = sorting
+    pagination = {"totalPages": total_pages, "itemsPerPage": per_page}
+    if total_items is not None:
+        pagination["totalItems"] = total_items
+    page_data: dict = {"searchAds": {"items": items, "pagination": pagination}}
     if districts is not None:
         page_data["searchLinksRelatedLocations"] = {"items": [
             {"name": d, "location": f"{CITY}/{d}"} for d in districts
         ]}
-    data = {"buildId": build_id, "props": {"pageProps": {"data": page_data}}}
+    data = {"buildId": build_id, "props": {"pageProps": {
+        "data": page_data, "sortingOption": {"by": by, "direction": direction},
+    }}}
     return f'<script id="__NEXT_DATA__" type="application/json">{json.dumps(data)}</script>'
 
 
-def _json(items: list[dict], total_pages: int) -> str:
+def _json(items: list[dict], total_pages: int, total_items: int | None = None) -> str:
+    pagination: dict = {"totalPages": total_pages, "itemsPerPage": 72}
+    if total_items is not None:
+        pagination["totalItems"] = total_items
     return json.dumps({"pageProps": {"data": {"searchAds": {
-        "items": items, "pagination": {"totalPages": total_pages},
+        "items": items, "pagination": pagination,
     }}}})
 
 
@@ -161,3 +177,56 @@ def test_district_paths_missing_or_foreign() -> None:
         {"name": "Mokotów", "location": "mazowieckie/warszawa/warszawa/warszawa/mokotow"},
     ]}}}
     assert district_paths(foreign, CITY) == []
+
+
+@pytest.mark.asyncio
+async def test_requests_use_latest_sort_and_72_per_page() -> None:
+    page1 = [_item(f"a{i}", "bogucice") for i in range(72)]
+    page2 = [_item(f"b{i}", "bogucice") for i in range(72)]
+    http = FakeHttp({
+        f"https://www.otodom.pl/pl/wyniki/sprzedaz/mieszkanie/{CITY}": [(200, _html("B1", page1, 2))],
+        "/_next/data/B1/": [(200, _json(page2, 2))],
+    })
+    items, stats = await OtodomSource(http).fetch_listings("katowice", "sale", 1500)
+
+    assert len(items) == 144
+    assert stats["pages_fetched"] == 2
+    assert stats["page1_refetched"] is False
+    for url in http.calls:
+        assert "by=LATEST" in url and "direction=DESC" in url and "limit=72" in url
+
+
+@pytest.mark.asyncio
+async def test_page_count_follows_pagination_at_72_per_page() -> None:
+    # 150 listings at 72 per page -> 3 pages; budget of 1500 does not stop early
+    pages = [[_item(f"p{n}-{i}", "bogucice") for i in range(k)] for n, k in ((1, 72), (2, 72), (3, 6))]
+    http = FakeHttp({
+        f"https://www.otodom.pl/pl/wyniki/sprzedaz/mieszkanie/{CITY}": [(200, _html("B1", pages[0], 3))],
+        "page=2&": [(200, _json(pages[1], 3))],
+        "page=3&": [(200, _json(pages[2], 3))],
+    })
+    items, stats = await OtodomSource(http).fetch_listings("katowice", "sale", 1500)
+    assert len(items) == 150
+    assert stats["pages_fetched"] == 3
+
+
+@pytest.mark.asyncio
+async def test_page1_refetched_when_html_ignores_sort() -> None:
+    html_items = [_item("default1", "bogucice")]
+    json_items = [_item("latest1", "bogucice"), _item("latest2", "bogucice")]
+    http = FakeHttp({
+        f"https://www.otodom.pl/pl/wyniki/sprzedaz/mieszkanie/{CITY}": [
+            (200, _html("B1", html_items, 1, sorting=("DEFAULT", "DESC", 36))),
+        ],
+        "/_next/data/B1/": [(200, _json(json_items, 1))],
+    })
+    items, stats = await OtodomSource(http).fetch_listings("katowice", "sale", 1500)
+    assert stats["page1_refetched"] is True
+    assert [it["slug"] for it in items] == ["latest1", "latest2"]
+
+
+def test_sort_and_page_size_configurable_in_code() -> None:
+    src = OtodomSource(FakeHttp({}), sort_by="DEFAULT", page_limit=36)
+    src._build_id = "B"
+    url = src._next_data_url(CITY, "sprzedaz", 2)
+    assert "by=DEFAULT" in url and "limit=36" in url and "page=2" in url
