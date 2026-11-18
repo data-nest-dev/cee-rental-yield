@@ -114,6 +114,11 @@ class TestInvestmentTiles:
         self.raw = _load_fixture("otodom_sale_katowice.json")
         self.cfg = CITIES["katowice"]
 
+    def test_investment_tiles_counted_separately(self) -> None:
+        _, rejected = parse_otodom_items(self.raw, self.cfg, "sale")
+        assert rejected.get("primary_market_project") == 8
+        assert "not_flat" not in rejected
+
     def test_related_ads_and_owner_data_stripped(self) -> None:
         parse_otodom_items(self.raw, self.cfg, "sale")
         for item in self.raw:

@@ -122,3 +122,20 @@ class TestBuildScoredListing:
         assert result["estimatedRentMonthlyEur"] is None
         assert result["grossYieldPct"] is None
         assert result["rentGroupLevel"] is None
+
+
+class TestSideSummary:
+    def test_primary_market_projects_and_merged_rejections(self) -> None:
+        from src.output import build_side_summary
+        summary = build_side_summary(
+            fetch_stats={"pages_fetched": 3, "raw_items": 108, "build_id_refreshes": 1,
+                         "fallback_to_html": False, "districts": 22, "district_source": "related_locations"},
+            parse_rejected={"primary_market_project": 8, "ad_insert": 3, "outlier": 1},
+            clean_rejected={"outlier": 2, "area_out_of_range": 1},
+            cleaned_count=93, requests=4, blocked=0, time_s=4.04,
+        )
+        assert summary["primaryMarketProjects"] == 8
+        assert summary["rejected"] == {"ad_insert": 3, "outlier": 3, "area_out_of_range": 1}
+        assert summary["pages"] == 3
+        assert summary["districtSource"] == "related_locations"
+        assert summary["timeS"] == 4.0

@@ -273,6 +273,10 @@ def parse_otodom_items(
             reject("ad_insert")
             continue
 
+        # Developer project tiles: no single price or area; counted to show primary-market scale
+        if raw.get("estate") == "INVESTMENT":
+            reject("primary_market_project")
+            continue
         if raw.get("estate") != "FLAT":
             reject("not_flat")
             continue

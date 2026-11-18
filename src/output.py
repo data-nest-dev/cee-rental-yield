@@ -125,3 +125,33 @@ def build_scored_listing(
         "confidence": comparables.confidence,
         "daysOnMarket": dom,
     }
+
+
+def build_side_summary(
+    fetch_stats: dict,
+    parse_rejected: dict[str, int],
+    clean_rejected: dict[str, int],
+    cleaned_count: int,
+    requests: int,
+    blocked: int,
+    time_s: float,
+) -> dict:
+    """RUN_SUMMARY entry for one city x market side."""
+    rejected = dict(parse_rejected)
+    for reason, n in clean_rejected.items():
+        rejected[reason] = rejected.get(reason, 0) + n
+    projects = rejected.pop("primary_market_project", 0)
+    return {
+        "pages": fetch_stats.get("pages_fetched", 0),
+        "rawItems": fetch_stats.get("raw_items", 0),
+        "cleanedItems": cleaned_count,
+        "rejected": rejected,
+        "primaryMarketProjects": projects,
+        "requests": requests,
+        "blocked": blocked,
+        "buildIdRefreshes": fetch_stats.get("build_id_refreshes", 0),
+        "fallbackToHtml": fetch_stats.get("fallback_to_html", False),
+        "districts": fetch_stats.get("districts"),
+        "districtSource": fetch_stats.get("district_source"),
+        "timeS": round(time_s, 1),
+    }
