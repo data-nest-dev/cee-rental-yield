@@ -132,20 +132,21 @@ def gate_coverage(
     min_sale_sample: int = 15,
     min_rent_sample: int = 10,
 ) -> dict[str, dict]:
-    """§13 gate (binding): per city, share of scored sale listings with saleGroupLevel == district."""
+    """§13 gate (binding): share of ALL cleaned sale listings per city scored at district level."""
     index = index_groups(listings)
     result: dict[str, dict] = {}
     for ls in listings:
         if ls.transaction != "sale":
             continue
+        c = result.setdefault(ls.city, {"saleListings": 0, "scored": 0, "districtLevel": 0})
+        c["saleListings"] += 1
         comp = resolve_comparables(ls, index, min_sale_sample, min_rent_sample)
         if comp is None:
             continue
-        c = result.setdefault(ls.city, {"scoredListings": 0, "districtLevel": 0})
-        c["scoredListings"] += 1
+        c["scored"] += 1
         c["districtLevel"] += comp.sale_level == "district"
     for c in result.values():
-        c["districtLevelPct"] = round(c["districtLevel"] / c["scoredListings"] * 100, 1)
+        c["districtLevelPct"] = round(c["districtLevel"] / c["saleListings"] * 100, 1)
     return result
 
 

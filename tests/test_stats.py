@@ -209,11 +209,27 @@ class TestGateCoverage:
             ("sale", 1, "A", None),  # city
         ])
         cov = gate_coverage(ls)["Katowice"]
-        assert cov == {"scoredListings": 41, "districtLevel": 36, "districtLevelPct": 87.8}
+        assert cov == {"saleListings": 41, "scored": 41, "districtLevel": 36, "districtLevelPct": 87.8}
 
-    def test_unscoreable_sales_are_excluded(self) -> None:
-        ls = _many([("sale", 10, "A", 2), ("rent", 30, "A", 2)])
-        assert gate_coverage(ls) == {}
+    def test_city_level_fallback_counts_as_not_district(self) -> None:
+        # 20 district-level sales + 10 sales without district/rooms (scored at city level)
+        ls = _many([("sale", 20, "A", 2), ("sale", 10, None, None)])
+        cov = gate_coverage(ls)["Katowice"]
+        assert (cov["saleListings"], cov["scored"], cov["districtLevel"]) == (30, 30, 20)
+        assert cov["districtLevelPct"] == 66.7
+
+    def test_unscoreable_sales_stay_in_denominator(self) -> None:
+        # 14 sales: no level reaches 15, nothing is scored; the city reports 0%, not nothing
+        ls = _many([("sale", 14, "A", 2), ("rent", 30, "A", 2)])
+        assert gate_coverage(ls)["Katowice"] == {
+            "saleListings": 14, "scored": 0, "districtLevel": 0, "districtLevelPct": 0.0,
+        }
+
+    def test_with_15_city_sales_every_sale_is_scoreable(self) -> None:
+        # The city level holds every sale, so unscoreable sales only occur in cities under 15.
+        ls = _many([("sale", 1, "A", 2), ("sale", 1, "B", 3), ("sale", 13, None, None)])
+        cov = gate_coverage(ls)["Katowice"]
+        assert cov["scored"] == cov["saleListings"] == 15
 
 
 class TestSampleAge:
