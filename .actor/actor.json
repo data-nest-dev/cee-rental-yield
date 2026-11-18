@@ -1,8 +1,8 @@
 {
     "actorSpecification": 1,
     "name": "cee-rental-yield",
-    "title": "Rental Yield & Deal Score – Poland & Czechia",
-    "description": "Gross rental yield by district and a 0–100 deal score for every apartment for sale in Warsaw, Kraków, Wrocław, Prague, Brno and Ostrava. In EUR.",
+    "title": "Rental Yield & Deal Score",
+    "description": "Gross rental yield by district and a 0–100 deal score for every apartment for sale in Warsaw, Kraków and Wrocław. Asking prices, in EUR and PLN.",
     "version": "0.1",
     "buildTag": "latest",
     "input": "./input_schema.json",

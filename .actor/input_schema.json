@@ -1,26 +1,21 @@
 {
     "$schema": "https://apify.com/schemas/v1/input.ide.json",
-    "title": "Python Selenium Scraper",
+    "title": "Rental Yield & Deal Score",
     "type": "object",
     "schemaVersion": 1,
     "properties": {
-        "start_urls": {
-            "title": "Start URLs",
+        "cities": {
+            "title": "Cities",
             "type": "array",
-            "description": "URLs to start with",
-            "prefill": [
-                {
-                    "url": "https://apify.com"
-                }
-            ],
-            "editor": "requestListSources"
-        },
-        "max_depth": {
-            "title": "Maximum depth",
-            "type": "integer",
-            "description": "Depth to which to scrape to",
-            "default": 1
+            "description": "Cities to analyse. Each city samples apartments for sale and for long-term rent.",
+            "editor": "select",
+            "items": {
+                "type": "string",
+                "enum": ["warszawa", "krakow", "wroclaw", "katowice"],
+                "enumTitles": ["Warsaw", "Kraków", "Wrocław", "Katowice"]
+            },
+            "minItems": 1,
+            "default": ["warszawa", "krakow"]
         }
-    },
-    "required": ["start_urls"]
+    }
 }
