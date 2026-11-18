@@ -2,7 +2,7 @@
 """Anonymize fixture JSON files before committing.
 
 Replaces PII (agent names, contacts, agency names, addresses, images)
-with test placeholders. Works for Otodom fixtures (and previously Sreality).
+with test placeholders. Otodom fixtures only.
 """
 from __future__ import annotations
 
@@ -69,35 +69,6 @@ def anonymize_otodom(data: dict) -> dict:
     return data
 
 
-def anonymize_sreality(data: dict) -> dict:
-    ds = data.get("pageProps", {}).get("dehydratedState", {})
-    for q in ds.get("queries", []):
-        qk = q.get("queryKey", [])
-        if isinstance(qk, list) and qk and qk[0] == "estatesSearch":
-            results = q.get("state", {}).get("data", {}).get("results", [])
-            for i, item in enumerate(results):
-                # Trim images to 1
-                imgs = item.get("images", [])
-                if imgs and len(imgs) > 1:
-                    item["images"] = imgs[:1]
-
-                # Remove street info from locality
-                loc = item.get("locality", {})
-                loc.pop("street", None)
-                loc.pop("streetId", None)
-                loc.pop("streetSeoName", None)
-                loc.pop("streetNumber", None)
-                loc.pop("houseNumber", None)
-                loc.pop("geoHash", None)
-                loc.pop("latitude", None)
-                loc.pop("longitude", None)
-
-                # Remove premise (agency) details but keep premiseId
-                item.pop("premiseLogo", None)
-
-    return data
-
-
 def main() -> None:
     if len(sys.argv) < 2:
         print(f"Usage: {sys.argv[0]} <fixture.json>")
@@ -108,8 +79,6 @@ def main() -> None:
 
     if "otodom" in path.name:
         data = anonymize_otodom(data)
-    elif "sreality" in path.name:
-        data = anonymize_sreality(data)
     else:
         print(f"Unknown fixture type: {path.name}")
         sys.exit(1)
