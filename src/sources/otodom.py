@@ -23,7 +23,8 @@ FLOOR_MAP = {
     "ABOVE_TENTH": None,
 }
 
-BASE_URL = "https://www.otodom.pl"
+DOMAIN = "www.otodom.pl"
+BASE_URL = f"https://{DOMAIN}"
 USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/131.0 Safari/537.36"
@@ -45,6 +46,7 @@ class OtodomSource:
     ) -> tuple[list[dict], dict]:
         cfg = CITIES[city_key]
         tx = OTODOM_TRANSACTION_MAP[transaction]
+        self._http.start_window(DOMAIN, f"{city_key} {transaction}")
         stats = {
             "pages_fetched": 0,
             "raw_items": 0,

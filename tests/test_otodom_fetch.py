@@ -43,6 +43,10 @@ class FakeHttp:
     def __init__(self, routes: dict[str, list[tuple[int, str]]]) -> None:
         self.routes = routes
         self.calls: list[str] = []
+        self.windows: list[tuple[str, str]] = []
+
+    def start_window(self, domain: str, label: str) -> None:
+        self.windows.append((domain, label))
 
     async def get(self, url: str, headers: dict | None = None) -> tuple[int, str]:
         self.calls.append(url)

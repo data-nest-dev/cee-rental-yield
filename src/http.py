@@ -12,6 +12,8 @@ logger = logging.getLogger(__name__)
 
 MAX_RETRIES = 3
 BASE_DELAY = 1.0
+BLOCK_RATE_LIMIT = 0.2
+BLOCK_MIN_REQUESTS = 10
 
 
 @dataclass
@@ -24,11 +26,24 @@ class DomainStats:
 
 
 @dataclass
+class BlockWindow:
+    label: str
+    requests: int = 0
+    blocked: int = 0
+
+
+@dataclass
 class HttpClient:
     proxy_url: str | None = None
+    min_interval: float = 1.0
     domain_stats: dict[str, DomainStats] = field(default_factory=dict)
+    _windows: dict[str, BlockWindow] = field(default_factory=dict)
     _locks: dict[str, asyncio.Lock] = field(default_factory=dict)
     _session: AsyncSession | None = None
+
+    def start_window(self, domain: str, label: str) -> None:
+        """Start a fresh block-rate window for a domain (one per city x market side)."""
+        self._windows[domain] = BlockWindow(label)
 
     def _get_domain(self, url: str) -> str:
         from urllib.parse import urlparse
@@ -59,19 +74,19 @@ class HttpClient:
         lock = self._get_lock(domain)
         stats = self._get_stats(domain)
 
-        # Check block rate
-        if stats.requests > 10 and stats.blocked / stats.requests > 0.2:
+        window = self._windows.setdefault(domain, BlockWindow("default"))
+        if window.requests > BLOCK_MIN_REQUESTS and window.blocked / window.requests > BLOCK_RATE_LIMIT:
             raise BlockedError(
-                f"{domain} blocked {stats.blocked} of {stats.requests} requests; "
-                "try residential proxy"
+                f"{domain} blocked {window.blocked} of {window.requests} requests "
+                f"({window.label}); try residential proxy PL"
             )
 
         async with lock:
             # Rate limit: 1 req/s per domain
             now = time.monotonic()
             elapsed = now - stats.last_request_time
-            if elapsed < 1.0:
-                await asyncio.sleep(1.0 - elapsed)
+            if elapsed < self.min_interval:
+                await asyncio.sleep(self.min_interval - elapsed)
 
             session = await self._ensure_session()
 
@@ -80,6 +95,7 @@ class HttpClient:
                 try:
                     stats.last_request_time = time.monotonic()
                     stats.requests += 1
+                    window.requests += 1
 
                     kwargs: dict = {
                         "headers": headers or {},
@@ -96,6 +112,7 @@ class HttpClient:
 
                     if resp.status_code == 403 or _is_captcha(body):
                         stats.blocked += 1
+                        window.blocked += 1
                         logger.warning(
                             "Blocked by %s (attempt %d/%d)",
                             domain, attempt + 1, MAX_RETRIES,
