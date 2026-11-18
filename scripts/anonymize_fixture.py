@@ -2,7 +2,7 @@
 """Anonymize fixture JSON files before committing.
 
 Replaces PII (agent names, contacts, agency names, addresses, images)
-with test placeholders. Works for both Otodom and Sreality fixtures.
+with test placeholders. Works for Otodom fixtures (and previously Sreality).
 """
 from __future__ import annotations
 

@@ -10,7 +10,7 @@ class CityConfig:
     country: str
     currency: str
     source: str
-    location_path: str  # otodom: slug segments; sreality: URL path segment
+    location_path: str  # otodom: 4-segment slug
 
 
 CITIES: dict[str, CityConfig] = {
@@ -46,31 +46,6 @@ CITIES: dict[str, CityConfig] = {
         source="otodom",
         location_path="dolnoslaskie/wroclaw/wroclaw/wroclaw",
     ),
-    "praha": CityConfig(
-        key="praha",
-        display_name="Praha",
-        country="CZ",
-        currency="CZK",
-        source="sreality",
-        location_path="praha",
-    ),
-    "brno": CityConfig(
-        key="brno",
-        display_name="Brno",
-        country="CZ",
-        currency="CZK",
-        source="sreality",
-        location_path="brno",
-    ),
-    "ostrava": CityConfig(
-        key="ostrava",
-        display_name="Ostrava",
-        country="CZ",
-        currency="CZK",
-        source="sreality",
-        location_path="ostrava",
-    ),
 }
 
 OTODOM_TRANSACTION_MAP = {"sale": "sprzedaz", "rent": "wynajem"}
-SREALITY_TRANSACTION_MAP = {"sale": "prodej", "rent": "pronajem"}

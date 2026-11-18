@@ -20,7 +20,6 @@ from src.clean import clean_listings
 from src.config import CITIES
 from src.http import HttpClient
 from src.sources.otodom import OtodomSource, parse_otodom_items
-from src.sources.sreality import SrealitySource, parse_sreality_items
 
 
 async def measure_city(
@@ -35,19 +34,16 @@ async def measure_city(
         t0 = time.monotonic()
 
         try:
-            if cfg.source == "otodom":
-                source = OtodomSource(http)
-                raw_items, stats = await source.fetch_listings(city_key, tx, max_listings)
-                listings, rejected = parse_otodom_items(raw_items, cfg, tx)
-            else:
-                source = SrealitySource(http)
-                raw_items, stats = await source.fetch_listings(city_key, tx, max_listings)
-                listings, rejected = parse_sreality_items(raw_items, cfg, tx)
+            if cfg.source != "otodom":
+                raise RuntimeError(f"Unsupported source: {cfg.source}")
+            source = OtodomSource(http)
+            raw_items, stats = await source.fetch_listings(city_key, tx, max_listings)
+            listings, rejected = parse_otodom_items(raw_items, cfg, tx)
 
             cleaned, clean_rejected = clean_listings(listings)
 
             elapsed = time.monotonic() - t0
-            domain = "www.otodom.pl" if cfg.source == "otodom" else "www.sreality.cz"
+            domain = "www.otodom.pl"
             ds = http.domain_stats.get(domain)
             blocked_pct = (ds.blocked / ds.requests * 100) if ds and ds.requests > 0 else 0
 
