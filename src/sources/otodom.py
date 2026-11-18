@@ -40,7 +40,10 @@ class OtodomSource:
         city_key: str,
         transaction: str,
         max_listings: int,
+        max_per_district: int | None = None,
+        discovery_pages: int = 10,
     ) -> tuple[list[dict], dict]:
+        # Otodom exposes no district list, so districts are discovered from listings' reverseGeocoding.
         cfg = CITIES[city_key]
         tx = OTODOM_TRANSACTION_MAP[transaction]
         stats = {
@@ -54,19 +57,55 @@ class OtodomSource:
         self._build_id = build_id
         stats["pages_fetched"] = 1
         stats["raw_items"] = len(page1_items)
-
         all_items = list(page1_items)
-        total_pages = pagination.get("totalPages", 1)
-        items_needed = max_listings - len(all_items)
 
-        for page_num in range(2, total_pages + 1):
-            if items_needed <= 0:
+        city_page_limit = pagination.get("totalPages", 1)
+        if max_per_district is not None:
+            city_page_limit = min(city_page_limit, discovery_pages)
+            budget = None
+        else:
+            budget = max_listings
+
+        for page_num in range(2, city_page_limit + 1):
+            if budget is not None and len(all_items) >= budget:
                 break
-            page_items = await self._fetch_page(cfg, tx, page_num, stats)
+            page_items, _ = await self._fetch_page(cfg.location_path, tx, page_num, stats)
             all_items.extend(page_items)
             stats["pages_fetched"] += 1
             stats["raw_items"] += len(page_items)
-            items_needed -= len(page_items)
+
+        if max_per_district is None:
+            return all_items, stats
+
+        seen = {it.get("slug") for it in all_items if it.get("slug")}
+        counts: dict[str, int] = {}
+        for it in all_items:
+            d = _district_id(it, cfg.location_path)
+            if d and _is_candidate(it):
+                counts[d] = counts.get(d, 0) + 1
+        districts = sorted(counts)
+        stats["districts"] = len(districts)
+        stats["district_pages"] = 0
+
+        for district in districts:
+            page_num = 1
+            total_pages = 1
+            while counts[district] < max_per_district and page_num <= total_pages:
+                page_items, pag = await self._fetch_page(district, tx, page_num, stats)
+                stats["pages_fetched"] += 1
+                stats["district_pages"] += 1
+                stats["raw_items"] += len(page_items)
+                total_pages = pag.get("totalPages", 0) if pag else 0
+                for it in page_items:
+                    slug = it.get("slug")
+                    if not slug or slug in seen:
+                        continue
+                    seen.add(slug)
+                    all_items.append(it)
+                    d = _district_id(it, cfg.location_path)
+                    if d and _is_candidate(it):
+                        counts[d] = counts.get(d, 0) + 1
+                page_num += 1
 
         return all_items, stats
 
@@ -81,99 +120,79 @@ class OtodomSource:
             raise RuntimeError(f"Otodom first page returned {status}")
 
         build_id = _extract_build_id(body)
-        next_data = _extract_next_data(body)
-        page_props = next_data.get("props", {}).get("pageProps", next_data.get("pageProps", {}))
-        items = page_props.get("data", {}).get("searchAds", {}).get("items", [])
-        pagination = page_props.get("data", {}).get("searchAds", {}).get("pagination", {})
-
-        return items, pagination, build_id
+        search_ads = _search_ads_from_html(body)
+        return search_ads.get("items", []), search_ads.get("pagination", {}), build_id
 
     async def _fetch_page(
-        self, cfg: CityConfig, tx: str, page: int, stats: dict,
-    ) -> list[dict]:
+        self, location_path: str, tx: str, page: int, stats: dict,
+    ) -> tuple[list[dict], dict]:
         if self._build_id and not stats.get("fallback_to_html"):
-            items = await self._fetch_next_data_page(cfg, tx, page, stats)
-            if items is not None:
-                return items
+            search_ads = await self._fetch_next_data_page(location_path, tx, page, stats)
+            if search_ads is not None:
+                return search_ads.get("items", []), search_ads.get("pagination", {})
 
         stats["fallback_to_html"] = True
-        return await self._fetch_html_page(cfg, tx, page)
+        return await self._fetch_html_page(location_path, tx, page)
 
-    async def _fetch_next_data_page(
-        self, cfg: CityConfig, tx: str, page: int, stats: dict,
-    ) -> list[dict] | None:
-        segs = cfg.location_path.split("/")
-        url = (
-            f"{BASE_URL}/_next/data/{self._build_id}/pl/wyniki/{tx}"
-            f"/mieszkanie/{cfg.location_path}.json"
-        )
-        params = {
-            "page": str(page),
-            "limit": "36",
-            "ownerTypeSingleSelect": "ALL",
-            "by": "DEFAULT",
-            "direction": "DESC",
-            "distanceRadius": "0",
-            "searchingCriteria": [tx, "mieszkanie"] + segs,
-        }
-        headers = {
-            "User-Agent": USER_AGENT,
-            "Accept": "*/*",
-            "x-nextjs-data": "1",
-            "Referer": f"{BASE_URL}/pl/wyniki/{tx}/mieszkanie/{cfg.location_path}",
-        }
-
-        # curl_cffi doesn't support repeated params via dict; build URL manually
-        from urllib.parse import urlencode
+    def _next_data_url(self, location_path: str, tx: str, page: int) -> str:
+        # curl_cffi can't send repeated params from a dict; build the query by hand
         param_parts = [
             f"page={page}", "limit=36", "ownerTypeSingleSelect=ALL",
             "by=DEFAULT", "direction=DESC", "distanceRadius=0",
         ]
-        for sc in [tx, "mieszkanie"] + segs:
+        for sc in [tx, "mieszkanie"] + location_path.split("/"):
             param_parts.append(f"searchingCriteria={sc}")
-        full_url = url + "?" + "&".join(param_parts)
+        return (
+            f"{BASE_URL}/_next/data/{self._build_id}/pl/wyniki/{tx}"
+            f"/mieszkanie/{location_path}.json?" + "&".join(param_parts)
+        )
 
-        status, body = await self._http.get(full_url, headers=headers)
+    async def _fetch_next_data_page(
+        self, location_path: str, tx: str, page: int, stats: dict,
+    ) -> dict | None:
+        headers = {
+            "User-Agent": USER_AGENT,
+            "Accept": "*/*",
+            "x-nextjs-data": "1",
+            "Referer": f"{BASE_URL}/pl/wyniki/{tx}/mieszkanie/{location_path}",
+        }
+        status, body = await self._http.get(
+            self._next_data_url(location_path, tx, page), headers=headers,
+        )
 
         if status == 404:
             stats["build_id_refreshes"] += 1
-            new_build_id = await self._refresh_build_id(cfg, tx)
-            if new_build_id and new_build_id != self._build_id:
-                full_url_new = full_url.replace(
-                    f"/_next/data/{self._build_id}/",
-                    f"/_next/data/{new_build_id}/",
-                )
-                self._build_id = new_build_id
-                status, body = await self._http.get(full_url_new, headers=headers)
-                if status == 404:
-                    return None
-            else:
+            new_build_id = await self._refresh_build_id(location_path, tx)
+            if not new_build_id or new_build_id == self._build_id:
                 return None
+            self._build_id = new_build_id
+            status, body = await self._http.get(
+                self._next_data_url(location_path, tx, page), headers=headers,
+            )
 
         if status != 200:
             return None
 
         try:
             data = json.loads(body)
-            return data.get("pageProps", {}).get("data", {}).get("searchAds", {}).get("items", [])
         except json.JSONDecodeError:
             return None
+        return data.get("pageProps", {}).get("data", {}).get("searchAds", {})
 
     async def _fetch_html_page(
-        self, cfg: CityConfig, tx: str, page: int,
-    ) -> list[dict]:
-        url = f"{BASE_URL}/pl/wyniki/{tx}/mieszkanie/{cfg.location_path}?page={page}"
+        self, location_path: str, tx: str, page: int,
+    ) -> tuple[list[dict], dict]:
+        url = f"{BASE_URL}/pl/wyniki/{tx}/mieszkanie/{location_path}?page={page}"
         headers = {"User-Agent": USER_AGENT}
         status, body = await self._http.get(url, headers=headers)
         if status != 200:
             logger.warning("Otodom HTML page %d returned %d", page, status)
-            return []
-        next_data = _extract_next_data(body)
-        page_props = next_data.get("props", {}).get("pageProps", next_data.get("pageProps", {}))
-        return page_props.get("data", {}).get("searchAds", {}).get("items", [])
+            return [], {}
+        search_ads = _search_ads_from_html(body)
+        return search_ads.get("items", []), search_ads.get("pagination", {})
 
-    async def _refresh_build_id(self, cfg: CityConfig, tx: str) -> str | None:
-        url = f"{BASE_URL}/pl/wyniki/{tx}/mieszkanie/{cfg.location_path}"
+    async def _refresh_build_id(self, location_path: str, tx: str) -> str | None:
+        url = f"{BASE_URL}/pl/wyniki/{tx}/mieszkanie/{location_path}"
         headers = {"User-Agent": USER_AGENT}
         status, body = await self._http.get(url, headers=headers)
         if status != 200:
@@ -182,6 +201,25 @@ class OtodomSource:
             return _extract_build_id(body)
         except ValueError:
             return None
+
+
+def _search_ads_from_html(html: str) -> dict:
+    next_data = _extract_next_data(html)
+    page_props = next_data.get("props", {}).get("pageProps", next_data.get("pageProps", {}))
+    return page_props.get("data", {}).get("searchAds", {})
+
+
+def _district_id(raw: dict, city_location_path: str) -> str | None:
+    for loc in raw.get("location", {}).get("reverseGeocoding", {}).get("locations", []):
+        loc_id = loc.get("id", "")
+        if loc.get("locationLevel") == "district" and loc_id.startswith(city_location_path + "/"):
+            return loc_id
+    return None
+
+
+def _is_candidate(raw: dict) -> bool:
+    href = raw.get("href", "")
+    return raw.get("estate") == "FLAT" and not (isinstance(href, str) and href.startswith("hpr/"))
 
 
 def parse_otodom_items(
