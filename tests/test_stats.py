@@ -209,8 +209,66 @@ class TestGateCoverage:
             ("sale", 1, "A", None),  # city
         ])
         cov = gate_coverage(ls)["Katowice"]
-        assert cov == {"scoredListings": 41, "districtLevel": 36, "districtLevelPct": 87.8}
+        assert cov == {"saleListings": 41, "scored": 41, "districtLevel": 36, "districtLevelPct": 87.8}
 
-    def test_unscoreable_sales_are_excluded(self) -> None:
-        ls = _many([("sale", 10, "A", 2), ("rent", 30, "A", 2)])
-        assert gate_coverage(ls) == {}
+    def test_city_level_fallback_counts_as_not_district(self) -> None:
+        # 20 district-level sales + 10 sales without district/rooms (scored at city level)
+        ls = _many([("sale", 20, "A", 2), ("sale", 10, None, None)])
+        cov = gate_coverage(ls)["Katowice"]
+        assert (cov["saleListings"], cov["scored"], cov["districtLevel"]) == (30, 30, 20)
+        assert cov["districtLevelPct"] == 66.7
+
+    def test_unscoreable_sales_stay_in_denominator(self) -> None:
+        # 14 sales: no level reaches 15, nothing is scored; the city reports 0%, not nothing
+        ls = _many([("sale", 14, "A", 2), ("rent", 30, "A", 2)])
+        assert gate_coverage(ls)["Katowice"] == {
+            "saleListings": 14, "scored": 0, "districtLevel": 0, "districtLevelPct": 0.0,
+        }
+
+    def test_with_15_city_sales_every_sale_is_scoreable(self) -> None:
+        # The city level holds every sale, so unscoreable sales only occur in cities under 15.
+        ls = _many([("sale", 1, "A", 2), ("sale", 1, "B", 3), ("sale", 13, None, None)])
+        cov = gate_coverage(ls)["Katowice"]
+        assert cov["scored"] == cov["saleListings"] == 15
+
+
+class TestSampleAge:
+    AS_OF = date(2026, 11, 18)
+
+    def _aged(self, days: list[int | None], tx: str = "sale", district: str = "A") -> list[Listing]:
+        out = []
+        for i, d in enumerate(days):
+            ls = _cov_listing(tx, district, 2, i)
+            ls.first_published = None if d is None else date.fromordinal(self.AS_OF.toordinal() - d)
+            out.append(ls)
+        return out
+
+    def test_median_oldest_and_share(self) -> None:
+        from src.stats import sample_stats
+        s = sample_stats(self._aged([1, 3, 10, None]), self.AS_OF, fetched=300, total=1200)
+        assert s == {"medianAgeDays": 3, "oldestListingDays": 10, "share": 0.25,
+                     "fetched": 300, "totalItems": 1200}
+
+    def test_unknown_total_and_no_dates(self) -> None:
+        from src.stats import sample_stats
+        s = sample_stats(self._aged([None]), self.AS_OF, fetched=5, total=None)
+        assert s["medianAgeDays"] is None and s["oldestListingDays"] is None and s["share"] is None
+
+    def test_future_publication_counts_as_zero_days(self) -> None:
+        from src.stats import sample_stats
+        assert sample_stats(self._aged([-2, 4]), self.AS_OF, 2, 2)["medianAgeDays"] == 2
+
+    def test_area_sample_uses_district_or_city_scope(self) -> None:
+        from src.stats import SideCoverage, area_sample
+        ls = self._aged([2] * 15, "sale", "A") + self._aged([6] * 10, "rent", "A")
+        cov = {
+            "sale": SideCoverage(fetched=600, total=2000, fetched_by_district={"A": 150}, total_by_district={"A": 300}),
+            "rent": SideCoverage(fetched=400, total=800, fetched_by_district={"A": 40}, total_by_district={}),
+        }
+        groups = {g.group_level: g for g in compute_groups(ls)}
+        district = area_sample(groups["district"], self.AS_OF, cov)
+        assert district["sale"]["share"] == 0.5 and district["sale"]["medianAgeDays"] == 2
+        assert district["rent"]["share"] is None  # district total unknown (city-wide mode)
+        assert district["rent"]["medianAgeDays"] == 6
+        city = area_sample(groups["city_rooms"], self.AS_OF, cov)
+        assert city["sale"]["share"] == 0.3 and city["rent"]["share"] == 0.5

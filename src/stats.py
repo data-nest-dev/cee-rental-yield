@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import math
 import statistics
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import date
 
 from src.models import Listing
 
@@ -131,20 +132,21 @@ def gate_coverage(
     min_sale_sample: int = 15,
     min_rent_sample: int = 10,
 ) -> dict[str, dict]:
-    """§13 gate (binding): per city, share of scored sale listings with saleGroupLevel == district."""
+    """§13 gate (binding): share of ALL cleaned sale listings per city scored at district level."""
     index = index_groups(listings)
     result: dict[str, dict] = {}
     for ls in listings:
         if ls.transaction != "sale":
             continue
+        c = result.setdefault(ls.city, {"saleListings": 0, "scored": 0, "districtLevel": 0})
+        c["saleListings"] += 1
         comp = resolve_comparables(ls, index, min_sale_sample, min_rent_sample)
         if comp is None:
             continue
-        c = result.setdefault(ls.city, {"scoredListings": 0, "districtLevel": 0})
-        c["scoredListings"] += 1
+        c["scored"] += 1
         c["districtLevel"] += comp.sale_level == "district"
     for c in result.values():
-        c["districtLevelPct"] = round(c["districtLevel"] / c["scoredListings"] * 100, 1)
+        c["districtLevelPct"] = round(c["districtLevel"] / c["saleListings"] * 100, 1)
     return result
 
 
@@ -178,6 +180,54 @@ def district_group_coverage(
             "fullGroups": full,
             "coveragePct": round(full / len(groups) * 100, 1),
         }
+    return result
+
+
+@dataclass
+class SideCoverage:
+    """What one market side fetched versus what Otodom reports (totalItems)."""
+    fetched: int
+    total: int | None
+    fetched_by_district: dict[str, int] = field(default_factory=dict)
+    total_by_district: dict[str, int] = field(default_factory=dict)
+
+
+def sample_stats(
+    listings: list[Listing],
+    as_of: date,
+    fetched: int,
+    total: int | None,
+) -> dict:
+    """Age of the sample (LATEST sorting samples current supply) and its share of all listings."""
+    ages = [max((as_of - ls.first_published).days, 0) for ls in listings if ls.first_published]
+    return {
+        "medianAgeDays": round(statistics.median(ages), 1) if ages else None,
+        "oldestListingDays": max(ages) if ages else None,
+        "share": round(fetched / total, 3) if total else None,
+        "fetched": fetched,
+        "totalItems": total,
+    }
+
+
+def area_sample(
+    group: GroupStats,
+    as_of: date,
+    coverage: dict[str, SideCoverage],
+) -> dict:
+    """Per side; share is the district's for district-level groups (Otodom totals have no rooms split)."""
+    result = {}
+    for side, listings in (("sale", group.sale_listings), ("rent", group.rent_listings)):
+        cov = coverage.get(side)
+        if cov is None:
+            result[side] = sample_stats(listings, as_of, 0, None)
+        elif group.group_level == "district":
+            result[side] = sample_stats(
+                listings, as_of,
+                cov.fetched_by_district.get(group.district or "", 0),
+                cov.total_by_district.get(group.district or ""),
+            )
+        else:
+            result[side] = sample_stats(listings, as_of, cov.fetched, cov.total)
     return result
 
 

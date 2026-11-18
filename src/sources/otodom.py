@@ -25,6 +25,11 @@ FLOOR_MAP = {
 
 DOMAIN = "www.otodom.pl"
 BASE_URL = f"https://{DOMAIN}"
+# LATEST orders by first publication: stable pagination, unlike DEFAULT (ordered by paid bumps).
+SORT_BY = "LATEST"
+SORT_DIRECTION = "DESC"
+# 72 is the largest page size Otodom honours; larger values silently fall back to 36.
+PAGE_LIMIT = 72
 USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/131.0 Safari/537.36"
@@ -32,9 +37,19 @@ USER_AGENT = (
 
 
 class OtodomSource:
-    def __init__(self, http: HttpClient) -> None:
+    def __init__(
+        self,
+        http: HttpClient,
+        sort_by: str = SORT_BY,
+        direction: str = SORT_DIRECTION,
+        page_limit: int = PAGE_LIMIT,
+    ) -> None:
         self._http = http
         self._build_id: str | None = None
+        self._html_mode = False
+        self.sort_by = sort_by
+        self.direction = direction
+        self.page_limit = page_limit
 
     async def fetch_listings(
         self,
@@ -54,10 +69,18 @@ class OtodomSource:
             "fallback_to_html": False,
         }
 
-        page1_items, pagination, build_id, district_list = await self._fetch_first_page(cfg, tx)
+        page1_items, pagination, build_id, district_names, ordered = await self._fetch_first_page(cfg, tx)
+        district_list = list(district_names)
         self._build_id = build_id
         stats["pages_fetched"] = 1
+        stats["page1_refetched"] = False
+        if not ordered:
+            # The HTML page ignored our sort or page size; take page 1 from the JSON route instead.
+            page1_items, pagination = await self._fetch_page(cfg.location_path, tx, 1, stats)
+            stats["pages_fetched"] += 1
+            stats["page1_refetched"] = True
         stats["raw_items"] = len(page1_items)
+        stats["total_items"] = pagination.get("totalItems")
         all_items = list(page1_items)
 
         city_page_limit = pagination.get("totalPages", 1)
@@ -77,6 +100,7 @@ class OtodomSource:
             stats["raw_items"] += len(page_items)
 
         if max_per_district is None:
+            _record_fetched(all_items, cfg.location_path, stats)
             return all_items, stats
 
         seen = {it.get("slug") for it in all_items if it.get("slug")}
@@ -85,6 +109,7 @@ class OtodomSource:
             d = _district_id(it, cfg.location_path)
             if d and _is_candidate(it):
                 counts[d] = counts.get(d, 0) + 1
+        district_total_items: dict[str, int] = {}
         if district_list:
             districts = district_list
             stats["district_source"] = "related_locations"
@@ -103,6 +128,8 @@ class OtodomSource:
                 stats["district_pages"] += 1
                 stats["raw_items"] += len(page_items)
                 total_pages = pag.get("totalPages", 0) if pag else 0
+                if page_num == 1 and pag and pag.get("totalItems") is not None:
+                    district_total_items[district] = pag["totalItems"]
                 for it in page_items:
                     slug = it.get("slug")
                     if not slug or slug in seen:
@@ -114,12 +141,36 @@ class OtodomSource:
                         counts[d] = counts.get(d, 0) + 1
                 page_num += 1
 
+        names = dict(district_names or {})
+        for it in all_items:
+            d = _district(it, cfg.location_path)
+            if d:
+                names.setdefault(d[0], d[1])
+        stats["district_total_items"] = {
+            names.get(path, path.rsplit("/", 1)[-1]): n for path, n in district_total_items.items()
+        }
+        _record_fetched(all_items, cfg.location_path, stats)
         return all_items, stats
+
+    def _order_params(self) -> list[str]:
+        return [f"limit={self.page_limit}", f"by={self.sort_by}", f"direction={self.direction}"]
+
+    def _is_ordered(self, page_props: dict) -> bool:
+        sorting = page_props.get("sortingOption") or {}
+        per_page = page_props.get("data", {}).get("searchAds", {}).get("pagination", {}).get("itemsPerPage")
+        return (
+            sorting.get("by") == self.sort_by
+            and sorting.get("direction") == self.direction
+            and per_page == self.page_limit
+        )
 
     async def _fetch_first_page(
         self, cfg: CityConfig, tx: str,
-    ) -> tuple[list[dict], dict, str, list[str]]:
-        url = f"{BASE_URL}/pl/wyniki/{tx}/mieszkanie/{cfg.location_path}"
+    ) -> tuple[list[dict], dict, str, dict[str, str], bool]:
+        url = (
+            f"{BASE_URL}/pl/wyniki/{tx}/mieszkanie/{cfg.location_path}?"
+            + "&".join(self._order_params())
+        )
         headers = {"User-Agent": USER_AGENT}
         status, body = await self._http.get(url, headers=headers)
 
@@ -133,25 +184,34 @@ class OtodomSource:
             search_ads.get("items", []),
             search_ads.get("pagination", {}),
             build_id,
-            district_paths(page_props, cfg.location_path),
+            district_links(page_props, cfg.location_path),
+            self._is_ordered(page_props),
         )
 
     async def _fetch_page(
         self, location_path: str, tx: str, page: int, stats: dict,
     ) -> tuple[list[dict], dict]:
-        if self._build_id and not stats.get("fallback_to_html"):
+        if self._build_id and not self._html_mode:
             search_ads = await self._fetch_next_data_page(location_path, tx, page, stats)
             if search_ads is not None:
                 return search_ads.get("items", []), search_ads.get("pagination", {})
+            self._html_mode = True
 
         stats["fallback_to_html"] = True
-        return await self._fetch_html_page(location_path, tx, page)
+        stats["html_pages"] = stats.get("html_pages", 0) + 1
+        items, pagination, page_build_id = await self._fetch_html_page(location_path, tx, page)
+        # During an Otodom deploy the refresh can still see the old buildId; once an HTML page
+        # carries a different one, return to the (3-4x smaller) JSON route.
+        if page_build_id and page_build_id != self._build_id:
+            self._build_id = page_build_id
+            self._html_mode = False
+            stats["fallback_recoveries"] = stats.get("fallback_recoveries", 0) + 1
+        return items, pagination
 
     def _next_data_url(self, location_path: str, tx: str, page: int) -> str:
         # curl_cffi can't send repeated params from a dict; build the query by hand
-        param_parts = [
-            f"page={page}", "limit=36", "ownerTypeSingleSelect=ALL",
-            "by=DEFAULT", "direction=DESC", "distanceRadius=0",
+        param_parts = [f"page={page}"] + self._order_params() + [
+            "ownerTypeSingleSelect=ALL", "distanceRadius=0",
         ]
         for sc in [tx, "mieszkanie"] + location_path.split("/"):
             param_parts.append(f"searchingCriteria={sc}")
@@ -194,15 +254,22 @@ class OtodomSource:
 
     async def _fetch_html_page(
         self, location_path: str, tx: str, page: int,
-    ) -> tuple[list[dict], dict]:
-        url = f"{BASE_URL}/pl/wyniki/{tx}/mieszkanie/{location_path}?page={page}"
+    ) -> tuple[list[dict], dict, str | None]:
+        url = (
+            f"{BASE_URL}/pl/wyniki/{tx}/mieszkanie/{location_path}?page={page}&"
+            + "&".join(self._order_params())
+        )
         headers = {"User-Agent": USER_AGENT}
         status, body = await self._http.get(url, headers=headers)
         if status != 200:
             logger.warning("Otodom HTML page %d returned %d", page, status)
-            return [], {}
+            return [], {}, None
         search_ads = _page_props_from_html(body).get("data", {}).get("searchAds", {})
-        return search_ads.get("items", []), search_ads.get("pagination", {})
+        try:
+            build_id = _extract_build_id(body)
+        except ValueError:
+            build_id = None
+        return search_ads.get("items", []), search_ads.get("pagination", {}), build_id
 
     async def _refresh_build_id(self, location_path: str, tx: str) -> str | None:
         url = f"{BASE_URL}/pl/wyniki/{tx}/mieszkanie/{location_path}"
@@ -221,23 +288,48 @@ def _page_props_from_html(html: str) -> dict:
     return next_data.get("props", {}).get("pageProps", next_data.get("pageProps", {}))
 
 
-def district_paths(page_props: dict, city_location_path: str) -> list[str]:
-    """District location paths from pageProps.data.searchLinksRelatedLocations; [] if absent."""
+def district_links(page_props: dict, city_location_path: str) -> dict[str, str]:
+    """District path -> name from pageProps.data.searchLinksRelatedLocations; {} if absent."""
     links = (page_props.get("data", {}).get("searchLinksRelatedLocations") or {}).get("items") or []
-    paths = []
+    result: dict[str, str] = {}
     for link in links:
         loc = link.get("location") or ""
-        if loc.startswith(city_location_path + "/") and loc not in paths:
-            paths.append(loc)
-    return paths
+        if loc.startswith(city_location_path + "/") and loc not in result:
+            result[loc] = link.get("name") or loc.rsplit("/", 1)[-1]
+    return result
 
 
-def _district_id(raw: dict, city_location_path: str) -> str | None:
+def district_paths(page_props: dict, city_location_path: str) -> list[str]:
+    return list(district_links(page_props, city_location_path))
+
+
+def _record_fetched(items: list[dict], city_location_path: str, stats: dict) -> None:
+    """Unique fetched items, overall and per geocoded district name, for sample-share reporting."""
+    seen: set[str] = set()
+    by_district: dict[str, int] = {}
+    for it in items:
+        slug = it.get("slug")
+        if not slug or slug in seen:
+            continue
+        seen.add(slug)
+        d = _district(it, city_location_path)
+        if d:
+            by_district[d[1]] = by_district.get(d[1], 0) + 1
+    stats["fetched_items"] = len(seen)
+    stats["fetched_by_district"] = by_district
+
+
+def _district(raw: dict, city_location_path: str) -> tuple[str, str] | None:
     for loc in raw.get("location", {}).get("reverseGeocoding", {}).get("locations", []):
         loc_id = loc.get("id", "")
         if loc.get("locationLevel") == "district" and loc_id.startswith(city_location_path + "/"):
-            return loc_id
+            return loc_id, loc.get("name") or loc_id.rsplit("/", 1)[-1]
     return None
+
+
+def _district_id(raw: dict, city_location_path: str) -> str | None:
+    d = _district(raw, city_location_path)
+    return d[0] if d else None
 
 
 def _is_candidate(raw: dict) -> bool:
@@ -273,15 +365,7 @@ def parse_otodom_items(
             reject("ad_insert")
             continue
 
-        # Developer project tiles: no single price or area; counted to show primary-market scale
-        if raw.get("estate") == "INVESTMENT":
-            reject("primary_market_project")
-            continue
-        if raw.get("estate") != "FLAT":
-            reject("not_flat")
-            continue
-
-        # Dedup by slug
+        # Dedup first: city-wide pages re-serve the same project tiles many times
         slug = raw.get("slug", "")
         if not slug:
             reject("no_slug")
@@ -290,6 +374,14 @@ def parse_otodom_items(
             reject("duplicate")
             continue
         seen_slugs.add(slug)
+
+        # Developer project tiles: no single price or area; counted to show primary-market scale
+        if raw.get("estate") == "INVESTMENT":
+            reject("primary_market_project")
+            continue
+        if raw.get("estate") != "FLAT":
+            reject("not_flat")
+            continue
 
         # Price
         total_price = raw.get("totalPrice") or {}
