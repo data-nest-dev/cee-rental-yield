@@ -12,6 +12,7 @@ import statistics
 import sys
 import time
 from collections import Counter
+from datetime import date
 
 sys.path.insert(0, ".")
 
@@ -20,7 +21,7 @@ from src.config import CITIES
 from src.http import HttpClient
 from src.output import build_side_summary
 from src.sources.otodom import OtodomSource, parse_otodom_items
-from src.stats import district_group_coverage, gate_coverage
+from src.stats import district_group_coverage, gate_coverage, sample_stats
 
 DOMAIN = "www.otodom.pl"
 
@@ -80,6 +81,13 @@ async def measure_city(
             requests = ds.requests - req0
             blocked = ds.blocked - blk0
             elapsed = time.monotonic() - t0
+            sample = sample_stats(cleaned, date.today(), stats.get("fetched_items", 0), stats.get("total_items"))
+            district_totals = stats.get("district_total_items") or {}
+            fetched_by_district = stats.get("fetched_by_district") or {}
+            shares = sorted(
+                fetched_by_district.get(name, 0) / total
+                for name, total in district_totals.items() if total
+            )
             result["sides"][tx] = {
                 "pages": stats["pages_fetched"],
                 "districts": stats.get("districts"),
@@ -95,9 +103,18 @@ async def measure_city(
                 "build_id_refreshes": stats.get("build_id_refreshes", 0),
                 "fallback_to_html": stats.get("fallback_to_html", False),
                 "district_source": stats.get("district_source"),
+                "page1_refetched": stats.get("page1_refetched"),
                 "investments": investments,
+                "sample": sample,
+                "district_share": {
+                    "districts": len(shares),
+                    "min": round(shares[0], 3),
+                    "median": round(statistics.median(shares), 3),
+                    "max": round(shares[-1], 3),
+                } if shares else None,
+                "district_names_unmatched": sorted(set(district_totals) - set(fetched_by_district)),
                 "run_summary": build_side_summary(
-                    stats, rejected, clean_rejected, len(cleaned), requests, blocked, elapsed,
+                    stats, rejected, clean_rejected, len(cleaned), requests, blocked, elapsed, sample=sample,
                 ),
             }
         except Exception as e:
@@ -143,13 +160,18 @@ async def main() -> None:
                   f"{s['cleaned']:>6} {s['blocked_pct']:>6.1f}% {s['bytes'] / 1e6:>7.1f} {s['time_s']:>6.1f}s")
             print(f"{'':>17} parse rejections: {s['rejected_parse']}")
             print(f"{'':>17} clean rejections: {s['rejected_clean']}")
+            smp = s["sample"]
+            print(f"{'':>17} sample: median age {smp['medianAgeDays']} d, oldest {smp['oldestListingDays']} d, "
+                  f"share {smp['share']} ({smp['fetched']}/{smp['totalItems']}); district share {s['district_share']}; "
+                  f"requests {s['requests']}; page1 refetched {s['page1_refetched']}; "
+                  f"primaryMarketProjects {s['run_summary']['primaryMarketProjects']}")
         gate = r["gate"] or {}
         cov = r["coverage"] or {}
         city_time = sum(s.get("time_s", 0) for s in r["sides"].values())
         print(f"{'':>17} city: {city_bytes / 1e6:.1f} MB* -> ${city_bytes / 1e9 * args.gb_price:.2f} "
               f"at ${args.gb_price}/GB, {city_time:.0f}s")
-        print(f"{'':>17} gate (binding): {gate.get('districtLevel')}/{gate.get('scoredListings')} scored sales "
-              f"at district level = {gate.get('districtLevelPct')}%")
+        print(f"{'':>17} gate (binding): {gate.get('districtLevel')}/{gate.get('saleListings')} cleaned sales "
+              f"at district level = {gate.get('districtLevelPct')}% (scored {gate.get('scored')})")
         print(f"{'':>17} groups (info):  {cov.get('fullGroups')}/{cov.get('groups')} district x rooms "
               f"with both thresholds = {cov.get('coveragePct')}%")
     print("=" * 104)
