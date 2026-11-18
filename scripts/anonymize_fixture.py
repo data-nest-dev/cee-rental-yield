@@ -42,7 +42,16 @@ def _anonymize_ad(item: dict, n: str) -> None:
     m = item.get("organisationAssignedMember")
     if isinstance(m, dict):
         m["name"] = f"Agent Testowy {n}"
-        m["imageUrl"] = ""
+        if "firstName" in m:
+            m["firstName"] = "Agent"
+        if "lastName" in m:
+            m["lastName"] = f"Testowy {n}"
+        for key in ("userID", "profileID"):
+            if key in m:
+                m[key] = None
+        for key in ("imageUrl", "photoURL"):
+            if key in m:
+                m[key] = ""
         m.pop("phone", None)
         m.pop("email", None)
 
@@ -53,6 +62,12 @@ def _anonymize_ad(item: dict, n: str) -> None:
         a["imageUrl"] = ""
         a.pop("phone", None)
         a.pop("email", None)
+
+    # free text: can contain names, phone numbers or a street
+    if item.get("title"):
+        item["title"] = f"Tytuł testowy {n}"
+    if item.get("shortDescription"):
+        item["shortDescription"] = f"Opis testowy {n}"
 
     imgs = item.get("images", [])
     if imgs and len(imgs) > 1:
