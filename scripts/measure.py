@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
-"""Live measurement script for weekend 1 gate decision.
+"""Live measurement for the §13 gate: pages, items, blocks, bytes, time, district x rooms coverage.
 
-Fetches listings from all configured cities, reports:
-- Pages fetched, raw items, % blocks, time, bytes downloaded
-- % of district×rooms groups with full sample
-
-Usage: python scripts/measure.py [city1 city2 ...]
+Usage: python scripts/measure.py [--per-district N] [--gb-price USD] [city ...]
 """
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import sys
@@ -20,92 +17,102 @@ from src.clean import clean_listings
 from src.config import CITIES
 from src.http import HttpClient
 from src.sources.otodom import OtodomSource, parse_otodom_items
+from src.stats import district_group_coverage
+
+DOMAIN = "www.otodom.pl"
 
 
 async def measure_city(
     city_key: str,
     http: HttpClient,
-    max_listings: int = 1500,
+    max_listings: int,
+    max_per_district: int | None,
 ) -> dict:
     cfg = CITIES[city_key]
     result = {"city": city_key, "source": cfg.source, "sides": {}}
+    all_cleaned = []
 
     for tx in ("sale", "rent"):
         t0 = time.monotonic()
+        ds = http.domain_stats.get(DOMAIN)
+        req0, blk0, bytes0 = (ds.requests, ds.blocked, ds.bytes_downloaded) if ds else (0, 0, 0)
 
         try:
             if cfg.source != "otodom":
                 raise RuntimeError(f"Unsupported source: {cfg.source}")
-            source = OtodomSource(http)
-            raw_items, stats = await source.fetch_listings(city_key, tx, max_listings)
+            raw_items, stats = await OtodomSource(http).fetch_listings(
+                city_key, tx, max_listings, max_per_district=max_per_district,
+            )
             listings, rejected = parse_otodom_items(raw_items, cfg, tx)
-
             cleaned, clean_rejected = clean_listings(listings)
+            all_cleaned.extend(cleaned)
 
-            elapsed = time.monotonic() - t0
-            domain = "www.otodom.pl"
-            ds = http.domain_stats.get(domain)
-            blocked_pct = (ds.blocked / ds.requests * 100) if ds and ds.requests > 0 else 0
-
+            ds = http.domain_stats[DOMAIN]
+            requests = ds.requests - req0
+            blocked = ds.blocked - blk0
             result["sides"][tx] = {
                 "pages": stats["pages_fetched"],
+                "districts": stats.get("districts"),
                 "raw_items": stats["raw_items"],
                 "parsed": len(listings),
                 "cleaned": len(cleaned),
                 "rejected_parse": rejected,
                 "rejected_clean": clean_rejected,
-                "blocked_pct": round(blocked_pct, 1),
-                "bytes": ds.bytes_downloaded if ds else 0,
-                "time_s": round(elapsed, 1),
+                "requests": requests,
+                "blocked_pct": round(blocked / requests * 100, 1) if requests else 0.0,
+                "bytes": ds.bytes_downloaded - bytes0,
+                "time_s": round(time.monotonic() - t0, 1),
                 "build_id_refreshes": stats.get("build_id_refreshes", 0),
                 "fallback_to_html": stats.get("fallback_to_html", False),
             }
-
         except Exception as e:
-            elapsed = time.monotonic() - t0
-            result["sides"][tx] = {"error": str(e), "time_s": round(elapsed, 1)}
+            result["sides"][tx] = {"error": str(e), "time_s": round(time.monotonic() - t0, 1)}
 
+    result["coverage"] = district_group_coverage(all_cleaned).get(cfg.display_name)
     return result
 
 
 async def main() -> None:
-    cities = sys.argv[1:] if len(sys.argv) > 1 else list(CITIES.keys())
+    ap = argparse.ArgumentParser()
+    ap.add_argument("cities", nargs="*", default=list(CITIES))
+    ap.add_argument("--max-listings", type=int, default=1500)
+    ap.add_argument("--per-district", type=int, default=None)
+    ap.add_argument("--gb-price", type=float, default=8.0, help="residential proxy USD/GB")
+    args = ap.parse_args()
 
     http = HttpClient()
     results = []
-
-    for city_key in cities:
+    for city_key in args.cities:
         if city_key not in CITIES:
             print(f"Unknown city: {city_key}")
             continue
-        print(f"Measuring {city_key}...")
-        r = await measure_city(city_key, http)
-        results.append(r)
-
+        print(f"Measuring {city_key}...", flush=True)
+        results.append(await measure_city(city_key, http, args.max_listings, args.per_district))
     await http.close()
 
-    # Print table
-    print("\n" + "=" * 100)
-    print(f"{'City':<12} {'Side':<6} {'Pages':>6} {'Raw':>6} {'Parsed':>7} {'Clean':>6} {'Block%':>7} {'KB':>8} {'Time':>6}")
-    print("-" * 100)
+    print("\n" + "=" * 104)
+    print(f"{'City':<10} {'Side':<5} {'Pages':>6} {'Raw':>6} {'Parsed':>7} {'Clean':>6} "
+          f"{'Block%':>7} {'MB*':>7} {'Time':>7}")
+    print("-" * 104)
     for r in results:
+        city_bytes = 0
         for tx in ("sale", "rent"):
             s = r["sides"].get(tx, {})
             if "error" in s:
-                print(f"{r['city']:<12} {tx:<6} ERROR: {s['error']}")
-            else:
-                print(
-                    f"{r['city']:<12} {tx:<6} {s['pages']:>6} {s['raw_items']:>6} "
-                    f"{s['parsed']:>7} {s['cleaned']:>6} {s['blocked_pct']:>6.1f}% "
-                    f"{s['bytes']//1024:>7}K {s['time_s']:>5.1f}s"
-                )
-                if s.get("rejected_parse"):
-                    print(f"{'':>20} parse rejections: {s['rejected_parse']}")
-                if s.get("rejected_clean"):
-                    print(f"{'':>20} clean rejections: {s['rejected_clean']}")
-    print("=" * 100)
+                print(f"{r['city']:<10} {tx:<5} ERROR: {s['error']}")
+                continue
+            city_bytes += s["bytes"]
+            print(f"{r['city']:<10} {tx:<5} {s['pages']:>6} {s['raw_items']:>6} {s['parsed']:>7} "
+                  f"{s['cleaned']:>6} {s['blocked_pct']:>6.1f}% {s['bytes'] / 1e6:>7.1f} {s['time_s']:>6.1f}s")
+            print(f"{'':>17} parse rejections: {s['rejected_parse']}")
+            print(f"{'':>17} clean rejections: {s['rejected_clean']}")
+        cov = r["coverage"] or {}
+        print(f"{'':>17} city: {city_bytes / 1e6:.1f} MB* -> ${city_bytes / 1e9 * args.gb_price:.2f} "
+              f"at ${args.gb_price}/GB; district x rooms coverage "
+              f"{cov.get('fullGroups')}/{cov.get('groups')} = {cov.get('coveragePct')}%")
+    print("=" * 104)
+    print("* decompressed response bytes; proxy traffic (compressed) is lower, so cost is an upper bound")
 
-    # JSON output
     print("\nJSON output:")
     print(json.dumps(results, indent=2, ensure_ascii=False))
 

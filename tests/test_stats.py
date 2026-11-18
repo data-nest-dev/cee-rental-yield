@@ -7,6 +7,7 @@ from src.models import Listing
 from src.stats import (
     deal_score,
     discount_vs_median_pct,
+    district_group_coverage,
     gross_yield_pct,
     gross_yield_range,
     median_val,
@@ -95,3 +96,32 @@ class TestDiscountVsMedian:
 
     def test_equal_to_median(self) -> None:
         assert discount_vs_median_pct(3000.0, 3000.0) == 0.0
+
+
+def _cov_listing(tx: str, district: str | None, rooms: int | None, i: int) -> Listing:
+    return Listing(
+        source="otodom", listing_id=str(i), dedup_key=f"s{i}", url="u", country="PL",
+        city="Katowice", district=district, transaction=tx, price_local=1.0, currency="PLN",
+        admin_fee_local=None, area_m2=50.0, rooms=rooms, floor=None, is_primary_market=False,
+        advertiser_type=None, first_published=date(2026, 1, 1),
+    )
+
+
+class TestDistrictGroupCoverage:
+    def test_counts_groups_meeting_both_thresholds(self) -> None:
+        ls = []
+        i = 0
+        for tx, n, district, rooms in [
+            ("sale", 15, "A", 2), ("rent", 10, "A", 2),  # full
+            ("sale", 14, "A", 3), ("rent", 30, "A", 3),  # sale short
+            ("sale", 40, "B", 5), ("rent", 9, "B", 4),   # 4+ bucket, rent short
+        ]:
+            for _ in range(n):
+                i += 1
+                ls.append(_cov_listing(tx, district, rooms, i))
+        cov = district_group_coverage(ls)["Katowice"]
+        assert cov == {"groups": 3, "fullGroups": 1, "coveragePct": 33.3}
+
+    def test_skips_listings_without_district_or_rooms(self) -> None:
+        ls = [_cov_listing("sale", None, 2, 1), _cov_listing("rent", "A", None, 2)]
+        assert district_group_coverage(ls) == {}

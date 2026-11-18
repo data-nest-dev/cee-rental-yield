@@ -119,6 +119,31 @@ def _rooms_bucket(rooms: int | None) -> str | None:
     return str(rooms)
 
 
+def district_group_coverage(
+    listings: list[Listing],
+    min_sale: int = 15,
+    min_rent: int = 10,
+) -> dict[str, dict]:
+    """Per city: share of observed district x roomsBucket groups meeting both sample thresholds."""
+    counts: dict[str, dict[tuple[str, str], dict[str, int]]] = {}
+    for ls in listings:
+        rb = _rooms_bucket(ls.rooms)
+        if not ls.district or not rb:
+            continue
+        g = counts.setdefault(ls.city, {}).setdefault((ls.district, rb), {"sale": 0, "rent": 0})
+        g[ls.transaction] += 1
+
+    result: dict[str, dict] = {}
+    for city, groups in counts.items():
+        full = sum(1 for g in groups.values() if g["sale"] >= min_sale and g["rent"] >= min_rent)
+        result[city] = {
+            "groups": len(groups),
+            "fullGroups": full,
+            "coveragePct": round(full / len(groups) * 100, 1),
+        }
+    return result
+
+
 def median_val(data: list[float]) -> float:
     if not data:
         return 0.0
