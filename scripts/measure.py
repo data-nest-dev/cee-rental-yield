@@ -19,11 +19,15 @@ sys.path.insert(0, ".")
 from src.clean import clean_listings
 from src.config import CITIES
 from src.http import HttpClient
-from src.output import build_side_summary
+from src.fx import parse_ecb_rates
+from src.output import build_scored_listing, build_side_summary
 from src.sources.otodom import OtodomSource, parse_otodom_items
-from src.stats import district_group_coverage, gate_coverage, sample_stats
+from src.stats import (
+    district_group_coverage, gate_coverage, index_groups, resolve_comparables, sample_stats,
+)
 
 DOMAIN = "www.otodom.pl"
+ECB_URL = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml"
 
 
 def investment_summary(raw_items: list[dict]) -> dict | None:
@@ -122,7 +126,20 @@ async def measure_city(
 
     result["gate"] = gate_coverage(all_cleaned).get(cfg.display_name)
     result["coverage"] = district_group_coverage(all_cleaned).get(cfg.display_name)
+    result["_cleaned"] = all_cleaned
     return result
+
+
+def score_city(cleaned: list, rates: dict[str, float]) -> list[dict]:
+    index = index_groups(cleaned)
+    scored = []
+    for ls in cleaned:
+        if ls.transaction != "sale":
+            continue
+        comp = resolve_comparables(ls, index)
+        if comp is not None:
+            scored.append(build_scored_listing(ls, comp, rates))
+    return scored
 
 
 async def main() -> None:
@@ -132,6 +149,7 @@ async def main() -> None:
     ap.add_argument("--per-district", type=int, default=None)
     ap.add_argument("--gb-price", type=float, default=8.0, help="residential proxy USD/GB")
     ap.add_argument("--json-out", default=None, help="also write the JSON results to this file")
+    ap.add_argument("--scored-out", default=None, help="write all scored sale listings (JSON) to this file")
     args = ap.parse_args()
 
     http = HttpClient()
@@ -142,6 +160,17 @@ async def main() -> None:
             continue
         print(f"Measuring {city_key}...", flush=True)
         results.append(await measure_city(city_key, http, args.max_listings, args.per_district))
+    if args.scored_out:
+        status, body = await http.get(ECB_URL)
+        if status != 200:
+            raise RuntimeError(f"ECB rates returned {status}")
+        rates, fx_date = parse_ecb_rates(body)
+        scored = [rec for r in results for rec in score_city(r["_cleaned"], rates)]
+        with open(args.scored_out, "w") as f:
+            json.dump({"fxDate": fx_date, "scoredListings": scored}, f, ensure_ascii=False, indent=1)
+        print(f"scored listings: {len(scored)} -> {args.scored_out}")
+    for r in results:
+        r.pop("_cleaned", None)
     await http.close()
 
     print("\n" + "=" * 104)
