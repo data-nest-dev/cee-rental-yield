@@ -262,3 +262,24 @@ async def test_city_wide_mode_records_city_total_only() -> None:
     assert stats["total_items"] == 2
     assert stats["fetched_by_district"] == {"bogucice": 1, "dab": 1}
     assert "district_total_items" not in stats
+
+
+@pytest.mark.asyncio
+async def test_html_fallback_returns_to_json_when_build_id_changes() -> None:
+    # Deploy in progress: OLD 404s, the refresh still sees OLD, the next HTML page shows NEW.
+    http = FakeHttp({
+        "/_next/data/OLD/": [(404, "")],
+        "/_next/data/NEW/": [(200, _json([_item("c1", "bogucice")], 3))],
+        f"https://www.otodom.pl/pl/wyniki/sprzedaz/mieszkanie/{CITY}": [
+            (200, _html("OLD", [_item("a1", "bogucice")], 3)),   # page 1
+            (200, _html("OLD", [], 3)),                           # refresh: still old
+            (200, _html("NEW", [_item("b1", "bogucice")], 3)),   # page 2 via HTML
+        ],
+    })
+    items, stats = await OtodomSource(http).fetch_listings("katowice", "sale", 1500)
+
+    assert [it["slug"] for it in items] == ["a1", "b1", "c1"]
+    assert stats["fallback_to_html"] is True
+    assert stats["html_pages"] == 1
+    assert stats["fallback_recoveries"] == 1
+    assert any("/_next/data/NEW/" in c and "page=3&" in c for c in http.calls)

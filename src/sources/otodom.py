@@ -46,6 +46,7 @@ class OtodomSource:
     ) -> None:
         self._http = http
         self._build_id: str | None = None
+        self._html_mode = False
         self.sort_by = sort_by
         self.direction = direction
         self.page_limit = page_limit
@@ -190,13 +191,22 @@ class OtodomSource:
     async def _fetch_page(
         self, location_path: str, tx: str, page: int, stats: dict,
     ) -> tuple[list[dict], dict]:
-        if self._build_id and not stats.get("fallback_to_html"):
+        if self._build_id and not self._html_mode:
             search_ads = await self._fetch_next_data_page(location_path, tx, page, stats)
             if search_ads is not None:
                 return search_ads.get("items", []), search_ads.get("pagination", {})
+            self._html_mode = True
 
         stats["fallback_to_html"] = True
-        return await self._fetch_html_page(location_path, tx, page)
+        stats["html_pages"] = stats.get("html_pages", 0) + 1
+        items, pagination, page_build_id = await self._fetch_html_page(location_path, tx, page)
+        # During an Otodom deploy the refresh can still see the old buildId; once an HTML page
+        # carries a different one, return to the (3-4x smaller) JSON route.
+        if page_build_id and page_build_id != self._build_id:
+            self._build_id = page_build_id
+            self._html_mode = False
+            stats["fallback_recoveries"] = stats.get("fallback_recoveries", 0) + 1
+        return items, pagination
 
     def _next_data_url(self, location_path: str, tx: str, page: int) -> str:
         # curl_cffi can't send repeated params from a dict; build the query by hand
@@ -244,7 +254,7 @@ class OtodomSource:
 
     async def _fetch_html_page(
         self, location_path: str, tx: str, page: int,
-    ) -> tuple[list[dict], dict]:
+    ) -> tuple[list[dict], dict, str | None]:
         url = (
             f"{BASE_URL}/pl/wyniki/{tx}/mieszkanie/{location_path}?page={page}&"
             + "&".join(self._order_params())
@@ -253,9 +263,13 @@ class OtodomSource:
         status, body = await self._http.get(url, headers=headers)
         if status != 200:
             logger.warning("Otodom HTML page %d returned %d", page, status)
-            return [], {}
+            return [], {}, None
         search_ads = _page_props_from_html(body).get("data", {}).get("searchAds", {})
-        return search_ads.get("items", []), search_ads.get("pagination", {})
+        try:
+            build_id = _extract_build_id(body)
+        except ValueError:
+            build_id = None
+        return search_ads.get("items", []), search_ads.get("pagination", {}), build_id
 
     async def _refresh_build_id(self, location_path: str, tx: str) -> str | None:
         url = f"{BASE_URL}/pl/wyniki/{tx}/mieszkanie/{location_path}"
