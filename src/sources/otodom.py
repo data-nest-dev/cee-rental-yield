@@ -43,7 +43,6 @@ class OtodomSource:
         max_per_district: int | None = None,
         discovery_pages: int = 10,
     ) -> tuple[list[dict], dict]:
-        # Otodom exposes no district list, so districts are discovered from listings' reverseGeocoding.
         cfg = CITIES[city_key]
         tx = OTODOM_TRANSACTION_MAP[transaction]
         stats = {
@@ -53,7 +52,7 @@ class OtodomSource:
             "fallback_to_html": False,
         }
 
-        page1_items, pagination, build_id = await self._fetch_first_page(cfg, tx)
+        page1_items, pagination, build_id, district_list = await self._fetch_first_page(cfg, tx)
         self._build_id = build_id
         stats["pages_fetched"] = 1
         stats["raw_items"] = len(page1_items)
@@ -61,7 +60,8 @@ class OtodomSource:
 
         city_page_limit = pagination.get("totalPages", 1)
         if max_per_district is not None:
-            city_page_limit = min(city_page_limit, discovery_pages)
+            # The district list makes city-wide discovery pages unnecessary.
+            city_page_limit = 1 if district_list else min(city_page_limit, discovery_pages)
             budget = None
         else:
             budget = max_listings
@@ -83,14 +83,19 @@ class OtodomSource:
             d = _district_id(it, cfg.location_path)
             if d and _is_candidate(it):
                 counts[d] = counts.get(d, 0) + 1
-        districts = sorted(counts)
+        if district_list:
+            districts = district_list
+            stats["district_source"] = "related_locations"
+        else:
+            districts = sorted(counts)
+            stats["district_source"] = "discovery"
         stats["districts"] = len(districts)
         stats["district_pages"] = 0
 
         for district in districts:
             page_num = 1
             total_pages = 1
-            while counts[district] < max_per_district and page_num <= total_pages:
+            while counts.get(district, 0) < max_per_district and page_num <= total_pages:
                 page_items, pag = await self._fetch_page(district, tx, page_num, stats)
                 stats["pages_fetched"] += 1
                 stats["district_pages"] += 1
@@ -111,7 +116,7 @@ class OtodomSource:
 
     async def _fetch_first_page(
         self, cfg: CityConfig, tx: str,
-    ) -> tuple[list[dict], dict, str]:
+    ) -> tuple[list[dict], dict, str, list[str]]:
         url = f"{BASE_URL}/pl/wyniki/{tx}/mieszkanie/{cfg.location_path}"
         headers = {"User-Agent": USER_AGENT}
         status, body = await self._http.get(url, headers=headers)
@@ -120,8 +125,14 @@ class OtodomSource:
             raise RuntimeError(f"Otodom first page returned {status}")
 
         build_id = _extract_build_id(body)
-        search_ads = _search_ads_from_html(body)
-        return search_ads.get("items", []), search_ads.get("pagination", {}), build_id
+        page_props = _page_props_from_html(body)
+        search_ads = page_props.get("data", {}).get("searchAds", {})
+        return (
+            search_ads.get("items", []),
+            search_ads.get("pagination", {}),
+            build_id,
+            district_paths(page_props, cfg.location_path),
+        )
 
     async def _fetch_page(
         self, location_path: str, tx: str, page: int, stats: dict,
@@ -188,7 +199,7 @@ class OtodomSource:
         if status != 200:
             logger.warning("Otodom HTML page %d returned %d", page, status)
             return [], {}
-        search_ads = _search_ads_from_html(body)
+        search_ads = _page_props_from_html(body).get("data", {}).get("searchAds", {})
         return search_ads.get("items", []), search_ads.get("pagination", {})
 
     async def _refresh_build_id(self, location_path: str, tx: str) -> str | None:
@@ -203,10 +214,20 @@ class OtodomSource:
             return None
 
 
-def _search_ads_from_html(html: str) -> dict:
+def _page_props_from_html(html: str) -> dict:
     next_data = _extract_next_data(html)
-    page_props = next_data.get("props", {}).get("pageProps", next_data.get("pageProps", {}))
-    return page_props.get("data", {}).get("searchAds", {})
+    return next_data.get("props", {}).get("pageProps", next_data.get("pageProps", {}))
+
+
+def district_paths(page_props: dict, city_location_path: str) -> list[str]:
+    """District location paths from pageProps.data.searchLinksRelatedLocations; [] if absent."""
+    links = (page_props.get("data", {}).get("searchLinksRelatedLocations") or {}).get("items") or []
+    paths = []
+    for link in links:
+        loc = link.get("location") or ""
+        if loc.startswith(city_location_path + "/") and loc not in paths:
+            paths.append(loc)
+    return paths
 
 
 def _district_id(raw: dict, city_location_path: str) -> str | None:

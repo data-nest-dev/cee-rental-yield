@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
-from src.sources.otodom import OtodomSource, _district_id
+from src.sources.otodom import OtodomSource, _district_id, district_paths
 
+FIXTURE_DIR = Path(__file__).parent / "fixtures"
 CITY = "slaskie/katowice/katowice/katowice"
 
 
@@ -21,10 +23,13 @@ def _item(slug: str, district: str, estate: str = "FLAT") -> dict:
     }
 
 
-def _html(build_id: str, items: list[dict], total_pages: int) -> str:
-    data = {"buildId": build_id, "props": {"pageProps": {"data": {"searchAds": {
-        "items": items, "pagination": {"totalPages": total_pages},
-    }}}}}
+def _html(build_id: str, items: list[dict], total_pages: int, districts: list[str] | None = None) -> str:
+    page_data: dict = {"searchAds": {"items": items, "pagination": {"totalPages": total_pages}}}
+    if districts is not None:
+        page_data["searchLinksRelatedLocations"] = {"items": [
+            {"name": d, "location": f"{CITY}/{d}"} for d in districts
+        ]}
+    data = {"buildId": build_id, "props": {"pageProps": {"data": page_data}}}
     return f'<script id="__NEXT_DATA__" type="application/json">{json.dumps(data)}</script>'
 
 
@@ -68,6 +73,7 @@ async def test_per_district_tops_up_each_district_to_quota() -> None:
     slugs = [it["slug"] for it in items]
     assert sorted(slugs) == ["a1", "a2", "a3", "b1", "b2"]
     assert stats["districts"] == 2
+    assert stats["district_source"] == "discovery"
     # bogucice reached its quota on page 1, so page 2 is never requested
     assert not any(_district_page("bogucice", 2) in c for c in http.calls)
     assert stats["district_pages"] == 2
@@ -112,3 +118,42 @@ def test_district_id_ignores_other_cities() -> None:
     raw = _item("x", "bogucice")
     assert _district_id(raw, CITY) == f"{CITY}/bogucice"
     assert _district_id(raw, "mazowieckie/warszawa/warszawa/warszawa") is None
+
+
+@pytest.mark.asyncio
+async def test_district_list_replaces_discovery_pages() -> None:
+    # City has 50 pages, but with the district list only page 1 is fetched city-wide,
+    # and a district absent from page 1 (zarzecze) is still paged.
+    page1 = [_item("a1", "bogucice")]
+    http = FakeHttp({
+        f"https://www.otodom.pl/pl/wyniki/sprzedaz/mieszkanie/{CITY}": [
+            (200, _html("B1", page1, 50, districts=["bogucice", "zarzecze"])),
+        ],
+        _district_page("bogucice", 1): [(200, _json([_item("a2", "bogucice")], 1))],
+        _district_page("zarzecze", 1): [(200, _json([_item("z1", "zarzecze")], 1))],
+    })
+    items, stats = await OtodomSource(http).fetch_listings(
+        "katowice", "sale", 1500, max_per_district=5,
+    )
+
+    assert stats["district_source"] == "related_locations"
+    assert stats["districts"] == 2
+    city_pages = [c for c in http.calls if f"/mieszkanie/{CITY}.json" in c]
+    assert city_pages == []
+    assert {"a1", "a2", "z1"} == {it["slug"] for it in items}
+
+
+def test_district_paths_from_fixture() -> None:
+    data = json.loads((FIXTURE_DIR / "otodom_rent_katowice.json").read_text())
+    paths = district_paths(data["pageProps"], CITY)
+    assert len(paths) == 22
+    assert f"{CITY}/bogucice" in paths
+    assert all(p.startswith(CITY + "/") for p in paths)
+
+
+def test_district_paths_missing_or_foreign() -> None:
+    assert district_paths({"data": {}}, CITY) == []
+    foreign = {"data": {"searchLinksRelatedLocations": {"items": [
+        {"name": "Mokotów", "location": "mazowieckie/warszawa/warszawa/warszawa/mokotow"},
+    ]}}}
+    assert district_paths(foreign, CITY) == []
