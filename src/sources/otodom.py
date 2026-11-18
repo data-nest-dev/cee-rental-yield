@@ -351,15 +351,7 @@ def parse_otodom_items(
             reject("ad_insert")
             continue
 
-        # Developer project tiles: no single price or area; counted to show primary-market scale
-        if raw.get("estate") == "INVESTMENT":
-            reject("primary_market_project")
-            continue
-        if raw.get("estate") != "FLAT":
-            reject("not_flat")
-            continue
-
-        # Dedup by slug
+        # Dedup first: city-wide pages re-serve the same project tiles many times
         slug = raw.get("slug", "")
         if not slug:
             reject("no_slug")
@@ -368,6 +360,14 @@ def parse_otodom_items(
             reject("duplicate")
             continue
         seen_slugs.add(slug)
+
+        # Developer project tiles: no single price or area; counted to show primary-market scale
+        if raw.get("estate") == "INVESTMENT":
+            reject("primary_market_project")
+            continue
+        if raw.get("estate") != "FLAT":
+            reject("not_flat")
+            continue
 
         # Price
         total_price = raw.get("totalPrice") or {}

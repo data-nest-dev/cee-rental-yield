@@ -124,3 +124,11 @@ class TestInvestmentTiles:
         for item in self.raw:
             for key in ("relatedAds", "advertOwner", "agency", "organisationAssignedMember"):
                 assert key not in item
+
+
+def test_duplicate_investment_tiles_counted_once() -> None:
+    raw = _load_fixture("otodom_sale_katowice.json")
+    tiles = [dict(it) for it in raw if it.get("estate") == "INVESTMENT"]
+    _, rejected = parse_otodom_items(raw + tiles + tiles, CITIES["katowice"], "sale")
+    assert rejected["primary_market_project"] == 8
+    assert rejected["duplicate"] == 16

@@ -32,17 +32,18 @@ ECB_URL = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml"
 
 def investment_summary(raw_items: list[dict]) -> dict | None:
     """What INVESTMENT (developer project) tiles contain; computed before the parser strips them."""
-    tiles = [it for it in raw_items if it.get("estate") == "INVESTMENT"]
-    if not tiles:
+    all_tiles = [it for it in raw_items if it.get("estate") == "INVESTMENT"]
+    if not all_tiles:
         return None
+    tiles = list({t.get("id"): t for t in all_tiles}.values())
     units = [t["investmentUnitsNumber"] for t in tiles if isinstance(t.get("investmentUnitsNumber"), int)]
     price_from = [t["priceFromPerSquareMeter"]["value"] for t in tiles
                   if (t.get("priceFromPerSquareMeter") or {}).get("value")]
     years = [t["investmentEstimatedDelivery"]["year"] for t in tiles
              if (t.get("investmentEstimatedDelivery") or {}).get("year")]
     return {
-        "tiles": len(tiles),
-        "uniqueTiles": len({t.get("id") for t in tiles}),
+        "tiles": len(all_tiles),
+        "uniqueTiles": len(tiles),
         "states": dict(Counter(t.get("investmentState") for t in tiles)),
         "unitsTotal": sum(units),
         "unitsMedian": statistics.median(units) if units else None,
