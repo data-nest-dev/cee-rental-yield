@@ -6,9 +6,63 @@ Repo: `https://github.com/data-nest-dev/cee-rental-yield` · Właściciel: datan
 
 ---
 
+## 0. Stan na 2026-11-18, noc (po „Tasks 1–9 Review Brief”, lokalnie `03c4e43`, nic nie wypchnięte) — czytaj najpierw
+
+**Decyzje właściciela (obowiązują):**
+1. **Zero ryzyka prawnego i wizerunkowego.** Źródło wchodzi do Actora tylko, jeśli `robots.txt` pozwala na używane ścieżki dla `User-agent: *`. Wątpliwości = nie wchodzi. Sreality wyłączone.
+2. **Nazwa produktu:** „Rental Yield & Deal Score” (bez krajów).
+3. **Bramka, kryterium 3:** ≥ 70% ofert sprzedaży porównanych na poziomie dzielnicy (`saleGroupLevel == "district"`). **Mianownik = wszystkie oczyszczone oferty sprzedaży miasta**, także te, których nie da się ocenić (liczą się jako „nie w dzielnicy”). Metryka grup `district × rooms` — tylko informacyjnie.
+4. **Historia git: przepisać przed pierwszym pushem** (commit `5fbd13d` i potomne zawierają w starych wersjach fixtures nazwiska agentów, nazwy agencji i ulice). Szczegóły: zadanie 1.
+5. **Sortowanie i rozmiar strony Otodom: `by=LATEST&direction=DESC` + `limit=72`.** Uzasadnienie z sondy (Warszawa, sprzedaż): stabilna paginacja (100% pokrycia stron po 5 min, 0 duplikatów vs 5 przy DEFAULT), 2× mniej zapytań; DEFAULT sortuje po płatnych podbiciach i gubi oferty. Konsekwencja: próba to **bieżąca podaż** — musimy to jawnie raportować (zadanie 4).
+
+**Ocena briefu „Tasks 1–9”:** zaakceptowane — commity 1a/1b/1c, lista dzielnic z `pageProps.data.searchLinksRelatedLocations`, niezależny fallback sprzedaży i najmu, okno blokad per miasto × strona rynku, testy na 3.12 i w obrazie Apify, `primaryMarketProjects`, strażnik danych osobowych w fixtures. Błąd z ulicami w fixture najmu był po stronie autora tego pliku (przygotowałem ją bez usunięcia `location.address.street`) — dobrze, że został wyłapany.
+
+**Odpowiedzi na „Interpretations” z briefu (§12 briefu):**
+1. *confidence*: brak poziomu najmu → `low` — **zgoda**. `high` liczone z liczby ofert sprzedaży — **zgoda**.
+2. *mianownik bramki*: zmień zgodnie z decyzją 3 (wszystkie oczyszczone oferty sprzedaży).
+3. *zestaw `areaYield`*: wszystkie kwalifikujące się poziomy (district, city_rooms, city) — **zgoda**; opłata tylko za `high`/`medium` zostaje (city = darmowy kontekst).
+4. *`relatedAds`*: w MVP **odrzucane** — to 2–3 przykładowe lokale na inwestycję, niereprezentatywne. Zapisz w README w „Limitations”.
+5. *fixture najmu*: po przepisaniu historii nie ma znaczenia; zostaw obecną wersję.
+6. *jednopolowy input schema*: **zgoda** do M3.
+7. *`apifyProxyCountry`*: sprawdź w źródle SDK (`apify` Python, `create_proxy_configuration(actor_proxy_input=...)`) jakie klucze czyta — nie zgaduj; jeśli kraj nie jest obsługiwany z inputu, ustaw `country_code="PL"` w kodzie dla Otodom.
+
+**Zadania (w tej kolejności):**
+
+1. **Przepisanie historii (przed jakimkolwiek pushem).**
+   - `brew install git-filter-repo`; zrób kopię zapasową katalogu repo.
+   - Usuń z całej historii oba pliki fixtures, potem dodaj ich obecne, zanonimizowane wersje jednym nowym commitem („Add anonymized Otodom fixtures”).
+   - Weryfikacja: `git log --all -p -- tests/fixtures | grep -E '"(street|firstName|lastName)"' ` nie może pokazać prawdziwych wartości; `test_fixtures_pii.py` przechodzi na każdym commicie, gdzie fixtures istnieją (sprawdź co najmniej HEAD i pierwszy commit z fixtures).
+   - `git filter-repo` domyślnie usuwa remote `origin` — dodaj go z powrotem (`git remote add origin <url>`).
+   - Dopiero potem `git push`. Lokalny `main` jest przed `origin/main` (`037a0bc`) tylko o lokalne commity, a `037a0bc` nie zawiera fixtures, więc po przepisaniu powinien zostać przodkiem — zwykły push wystarczy. **Jeśli Git zażąda force push, zatrzymaj się i zapytaj właściciela.**
+2. **Dokończ bieżący pomiar** (task 4, DEFAULT/36) — zostaw go, dane posłużą do porównania; nie przerywaj.
+3. **Wdrożenie decyzji 5:** `by=LATEST&direction=DESC`, `limit=72` jako domyślne w `otodom.py`; parametry konfigurowalne w kodzie (nie w inpucie). Test: URL zawiera oba parametry; parser obsługuje 72 elementy (fixture z 36 wystarczy, test na liczbę z `pagination`).
+4. **Raportowanie wieku próby** (konsekwencja LATEST): w każdym `areaYield` i w `RUN_SUMMARY` per miasto × strona rynku: `sample.medianAgeDays`, `sample.oldestListingDays` (z `createdAtFirst`), `sample.share` = pobrane / `totalItems` miasta lub dzielnicy. Testy na syntetycznych danych.
+5. **Mianownik bramki** wg decyzji 3 w `gate_coverage` + test (oferta nieoceniana obniża procent).
+6. **Pomiar decyzyjny** (po zadaniach 3–5): 4 miasta × LATEST/72 × {per-district 150, per-district 300, city-wide 1500}. Raport: metryka bramki (obowiązująca), metryka informacyjna, wiek próby, MB, zapytania, czas per miasto, `primaryMarketProjects`. **Rekomenduj domyślny tryb i kwotę** spełniające: bramka ≥ 70% w Warszawie, Krakowie, Wrocławiu (Katowice informacyjnie — rynek najmu ograniczony podażą) **oraz** domyślne uruchomienie (`["warszawa","krakow"]`) < 5 min.
+7. **Weryfikacja ręczna (M2):** wygeneruj CSV z 20 losowymi ocenionymi ofertami (po 5 z każdego miasta PL): `url, priceLocal, areaM2, rooms, district, pricePerM2Eur, dealScore`. Właściciel sprawdza je w przeglądarce. Actor nie otwiera stron ofert (§3.1).
+8. **Czeskie źródło (§6.2a):** sprawdź `robots.txt` bezrealitky.cz i reality.idnes.cz (tylko `robots.txt` i jedna strona wyników w przeglądarce do oceny liczby ofert). Raport w PR. Nie pisz parsera przed decyzją właściciela.
+9. **Aktualizacja CLAUDE.md** faktami z briefu: lista dzielnic potwierdzona na żywo (Warszawa 18, Wrocław 5), `limit=100` → cicho 36, zawartość kafelków `INVESTMENT`, liczba testów, §19. Commit razem z edycjami właściciela.
+
+**Potem M3** (osobny brief z planem przed rozpoczęciem): `main.py` (orkiestracja), pełny input schema §10, `dataset_schema.json`, pay-per-event (sprawdź aktualne API SDK), monitoring, `RUN_SUMMARY` w Actorze, README §16, Dockerfile, uruchomienie na prywatnym Actorze w Apify z proxy rezydencjalnym PL (kryterium 1 bramki na produkcji).
+
+**Wykonanie zadań 1–9 (Claude Code, 2026-11-18, gałąź `latest-72`, PR do `main`):**
+1. Historia przepisana i wypchnięta zwykłym pushem (`037a0bc..54b0ab0`, bez force). Przy okazji wyszedł drugi wyciek w „zanonimizowanych” fixtures: `organisationAssignedMember.firstName/lastName/userID/profileID/photoURL` i ulica w tytule — naprawione przed commitem fixtures, strażnik sprawdza te pola. Z historii usunięte też stare fixtures Sreality (identyfikatory agencji). Kopia sprzed przepisania: `~/PycharmProjects/cee-rental-yield-backup-2026-11-18` (zawiera stare dane — usuń po akceptacji).
+2. Pomiar DEFAULT/36 dokończony (porównanie w §6.1).
+3–5. LATEST/72, wiek próby, mianownik bramki — zrobione z testami (96 testów, 3.12).
+6. Rekomendacja w §6.1 „Pomiar decyzyjny”.
+7. CSV: `storage/m2_review_sample.csv` (poza gitem, `storage/` jest w `.gitignore`).
+8. Raport w §6.2a i w PR.
+9. Ten plik.
+
+**Po stronie właściciela (nie Claude Code):**
+- sprawdzić w Apify Console, czy plan konta daje dostęp do proxy rezydencjalnego (Proxy → Residential), zanim zacznie się M3,
+- podpiąć repo w Apify (Source: Git repository) po pierwszym pushu,
+- przed publikacją (M4): dane do wypłat i ceny zdarzeń w Publication → Monetization,
+- weryfikacja ręczna 20 ofert z zadania 7.
+
 ## 1. Co budujemy i dla kogo
 
-**Produkt:** Actor Apify „Rental Yield & Deal Score – Poland & Czechia”. Jedno uruchomienie pobiera z portalu ogłoszenia mieszkań **na sprzedaż i na wynajem długoterminowy** w wybranych miastach i zwraca:
+**Produkt:** Actor Apify „Rental Yield & Deal Score”. Jedno uruchomienie pobiera z portalu ogłoszenia mieszkań **na sprzedaż i na wynajem długoterminowy** w wybranych miastach i zwraca:
 
 1. **Rentowność brutto najmu** per dzielnica × liczba pokoi (mediany, kwartyle, liczebność próby).
 2. **Ocenę 0–100 każdej oferty sprzedaży** względem mediany ceny za m² jej grupy (dzielnica × pokoje) i szacowaną rentowność tej oferty.
@@ -27,7 +81,7 @@ Repo: `https://github.com/data-nest-dev/cee-rental-yield` · Właściciel: datan
 | Wersja | Kraj | Źródło | Miasta |
 |---|---|---|---|
 | 1.0 | Polska | Otodom | Warszawa, Kraków, Wrocław (+ Katowice jako miasto testowe) |
-| 1.0 | Czechy | Sreality | Praha, Brno, Ostrava |
+| 1.0 lub później | Czechy | do ustalenia (Sreality wyłączone, §6.2a) | Praha, Brno, Ostrava |
 | 1.1 | Włochy | Immobiliare | Milano, Roma, Napoli (NIE w tym etapie) |
 
 **W zakresie 1.0:** mieszkania (flats), sprzedaż + najem długoterminowy, rynek wtórny i pierwotny razem (z flagą `isPrimaryMarket`), rentowność per dzielnica × pokoje, ocena ofert sprzedaży, tryb monitoringu (tylko nowe oferty i obniżki), EUR + waluta lokalna.
@@ -41,7 +95,7 @@ Repo: `https://github.com/data-nest-dev/cee-rental-yield` · Właściciel: datan
 1. **Tylko strony wyników wyszukiwania.** Nigdy nie otwieraj pojedynczych ogłoszeń (strony szczegółów). Wszystko, czego potrzebujemy, jest w katalogu.
 2. **Zero danych osobowych w wyniku i w logach.** Usuwaj przy parsowaniu, zanim cokolwiek zapiszesz: imiona, nazwiska, telefony, e-maile, nazwy agencji, nazwy właścicieli ogłoszeń, zdjęcia, opisy. Patrz §7.
 3. **Wynik to nasze wyliczenia + link do ogłoszenia**, nie kopia ogłoszenia. Zwracamy cenę, metraż, pokoje, dzielnicę, wskaźniki i URL. Bez tytułów ogłoszeń w rekordach wyjściowych (tytuł może zawierać dane osobowe i jest treścią portalu).
-4. **Tempo:** maksymalnie 1 zapytanie na sekundę na domenę. Szanuj `robots.txt` (sprawdź aktualny dla każdej domeny, **[DO WERYFIKACJI]** czy `/_next/data/` na otodom.pl nie jest zablokowane).
+4. **Tempo i robots.txt:** maksymalnie 1 zapytanie na sekundę na domenę. **Źródło wchodzi do Actora tylko, gdy `robots.txt` pozwala na nasze ścieżki dla `User-agent: *`** — niezależnie od tego, co robią inne Actory w Apify Store (§0, decyzja 1). Otodom: `robots.txt` pozwala na `/_next/data/` i `/pl/wyniki/`, brak crawl-delay (potwierdzone 2026-11-18) — Otodom zatwierdzony przez właściciela. Sreality: wyłączone.
 5. **Bez obchodzenia captchy, bez farm captcha, bez przeglądarki.** Jeśli serwis blokuje, kończymy z czytelnym błędem.
 6. **Głośna porażka:** pusty lub zablokowany wynik kończy uruchomienie błędem z opisem i **nie nalicza opłat**. Nigdy pusty „sukces”.
 7. **Testy bez sieci.** Wszystkie testy jednostkowe działają na fixtures z `tests/fixtures/`. Żywe zapytania tylko w skrypcie pomiarowym (§13), uruchamianym ręcznie.
@@ -88,18 +142,20 @@ cee-rental-yield/
 │   ├── output.py                 # budowa rekordów areaYield / scoredListing / RUN_SUMMARY
 │   └── sources/
 │       ├── __init__.py           # interfejs Source + rejestr
-│       ├── otodom.py
-│       └── sreality.py
+│       └── otodom.py
 ├── scripts/
-│   └── measure.py                # pomiar „weekend 1”, żywe zapytania, wynik do konsoli/JSON
+│   ├── measure.py                # pomiar bramki, żywe zapytania, wynik do konsoli/JSON (--scored-out)
+│   ├── anonymize_fixture.py      # anonimizacja fixtures przed commitem (§14)
+│   └── review_sample.py          # próbka ofert do ręcznej weryfikacji (CSV)
 └── tests/
     ├── fixtures/
-    │   ├── otodom_rent_katowice.json     # JEST (zanonimizowana próbka _next/data, najem Katowice)
-    │   ├── otodom_sale_katowice.json     # DO POBRANIA (§14)
-    │   ├── sreality_sale_brno.json       # DO POBRANIA (§14)
-    │   └── sreality_rent_brno.json       # DO POBRANIA (§14)
+    │   ├── otodom_rent_katowice.json     # zanonimizowana próbka _next/data, najem Katowice
+    │   ├── otodom_sale_katowice.json     # zanonimizowana próbka _next/data, sprzedaż Katowice (8 kafelków INVESTMENT)
+    │   └── ecb_daily.xml
     ├── test_otodom_parse.py
-    ├── test_sreality_parse.py
+    ├── test_otodom_fetch.py      # paginacja, dzielnice, LATEST/72, buildId, fallback HTML (fałszywy klient)
+    ├── test_http.py              # okno blokad
+    ├── test_fixtures_pii.py      # strażnik danych osobowych we wszystkich fixtures
     ├── test_clean.py
     ├── test_stats.py
     ├── test_fx.py
@@ -116,7 +172,7 @@ cee-rental-yield/
 
 ```
 GET https://www.otodom.pl/_next/data/{buildId}/pl/wyniki/{transaction}/mieszkanie/{locationPath}.json
-    ?page={n}&limit=36&ownerTypeSingleSelect=ALL&by=DEFAULT&direction=DESC&distanceRadius=0
+    ?page={n}&limit=72&by=LATEST&direction=DESC&ownerTypeSingleSelect=ALL&distanceRadius=0
     &searchingCriteria={transaction}&searchingCriteria=mieszkanie
     &searchingCriteria={seg1}&searchingCriteria={seg2}&searchingCriteria={seg3}&searchingCriteria={seg4}
 ```
@@ -127,25 +183,25 @@ GET https://www.otodom.pl/_next/data/{buildId}/pl/wyniki/{transaction}/mieszkani
 - odpowiedź: `{"pageProps": {...}, "__N_SSP": true}`
 
 **Discovery `buildId`:** `buildId` zmienia się przy każdym wdrożeniu Otodom. Raz na uruchomienie pobierz HTML strony wyników:
-`GET https://www.otodom.pl/pl/wyniki/{transaction}/mieszkanie/{locationPath}`, wyciągnij `<script id="__NEXT_DATA__" type="application/json">…</script>`, sparsuj JSON, weź `buildId`. Ten sam JSON ma `props.pageProps` = dane strony 1 (użyj ich, nie pobieraj strony 1 drugi raz). Gdy `_next/data` zwróci 404 → odśwież `buildId` jeden raz → jeśli dalej źle, przejdź na pobieranie stron HTML (`?page=N`) i parsuj `__NEXT_DATA__` z każdej.
+`GET https://www.otodom.pl/pl/wyniki/{transaction}/mieszkanie/{locationPath}`, wyciągnij `<script id="__NEXT_DATA__" type="application/json">…</script>`, sparsuj JSON, weź `buildId`. Ten sam JSON ma `props.pageProps` = dane strony 1 (użyj ich, nie pobieraj strony 1 drugi raz). Gdy `_next/data` zwróci 404 → odśwież `buildId` jeden raz → jeśli dalej źle, przejdź na pobieranie stron HTML (`?page=N`) i parsuj `__NEXT_DATA__` z każdej. **Wróć do `_next/data`, gdy strona HTML pokaże inny `buildId`** — 2026-11-18 Otodom wdrażał nową wersję w trakcie pomiaru: odświeżenie widziało jeszcze stary `buildId`, a strony HTML są 3–4× większe (koszt proxy). Strona 1 (HTML) idzie z tymi samymi `limit=72&by=LATEST&direction=DESC`; jeśli `pageProps.sortingOption` lub `itemsPerPage` się nie zgadzają, strona 1 jest pobierana ponownie z `_next/data` — w pomiarze 24/24 stron rynku HTML honorował parametry (potwierdzone 2026-11-18).
 
 **Lokalizacje (slug = locationPath):**
 
 | Miasto (input) | locationPath | Status |
 |---|---|---|
-| `katowice` | `slaskie/katowice/katowice/katowice` | potwierdzone (fixture) |
-| `warszawa` | `mazowieckie/warszawa/warszawa/warszawa` | [DO WERYFIKACJI] |
-| `krakow` | `malopolskie/krakow/krakow/krakow` | [DO WERYFIKACJI] |
-| `wroclaw` | `dolnoslaskie/wroclaw/wroclaw/wroclaw` | [DO WERYFIKACJI] |
+| `katowice` | `slaskie/katowice/katowice/katowice` | potwierdzone 2026-11-18 (5 701 ofert) |
+| `warszawa` | `mazowieckie/warszawa/warszawa/warszawa` | potwierdzone 2026-11-18 (20 260 ofert) |
+| `krakow` | `malopolskie/krakow/krakow/krakow` | potwierdzone 2026-11-18 (14 450 ofert) |
+| `wroclaw` | `dolnoslaskie/wroclaw/wroclaw/wroclaw` | potwierdzone 2026-11-18 (10 836 ofert) |
 
 Weryfikacja: w odpowiedzi `pageProps.tracking.listing.selected_locations_id` musi być `["city:{locationPath}"]`.
 
 **Struktura odpowiedzi (potwierdzona w `tests/fixtures/otodom_rent_katowice.json`):**
 
-- `pageProps.data.searchAds.items[]` — oferty (36 na stronę; może trafić się 37. element — wstawka reklamowa, patrz pułapki)
+- `pageProps.data.searchAds.items[]` — oferty (72 na stronę przy `limit=72`, 36 domyślnie; może trafić się dodatkowy element — wstawka reklamowa, patrz pułapki)
 - `pageProps.data.searchAds.pagination` — `{itemsPerPage, totalItems, totalPages, currentPage}`
 - `pageProps.faqDynamicData` — agregaty Otodom: `avgPrice`, `avgAreaM`, `avgPricePerM` (Katowice najem: 54) — używaj jako testu sensowności naszej mediany, nie jako danych
-- `pageProps.searchLinksRelatedLocations.items[]` — `{name, location}` dzielnic miasta (slug dzielnicy w `location`)
+- `pageProps.data.searchLinksRelatedLocations.items[]` — `{name, estate, transaction, location}` wszystkich dzielnic miasta (22 w Katowicach; slug dzielnicy = ostatni segment `location`). Potwierdzone w fixture i na żywo 2026-11-18: Warszawa 18, Wrocław 5, sprzedaż i najem (te same listy)
 - `pageProps.tracking.listing` — `result_count`, `page_count`, `results_per_page`, `selected_locations_id`
 
 **Pola oferty, których używamy** (`items[]`):
@@ -156,7 +212,7 @@ Weryfikacja: w odpowiedzi `pageProps.tracking.listing.selected_locations_id` mus
 | `slug` | slug, np. `mieszkanie-2-pokoje-bogucice-koszutka-ID4E1Sb` | klucz deduplikacji; URL oferty = `https://www.otodom.pl/pl/oferta/{slug}` |
 | `href` | ścieżka | jeśli zaczyna się od `hpr/` → wstawka reklamowa, odrzuć |
 | `estate` | `FLAT` | filtruj tylko `FLAT` |
-| `transaction` | `SELL` / `RENT` | **potwierdzone (2026-11-18, fixture otodom_sale_katowice.json)**: sprzedaż = `"SELL"` |
+| `transaction` | `SELL` / `RENT` | potwierdzone 2026-11-18 |
 | `totalPrice.value`, `totalPrice.currency` | cena sprzedaży albo **miesięczny najem** | `null` gdy ukryta |
 | `rentPrice.value` | **czynsz administracyjny** (do wspólnoty), NIE najem | może być `null` |
 | `hidePrice` | cena ukryta | odrzuć gdy `true` |
@@ -172,11 +228,38 @@ Weryfikacja: w odpowiedzi `pageProps.tracking.listing.selected_locations_id` mus
 | `isPrivateOwner`, `extendedAdvertiserType` | typ ogłoszeniodawcy | możemy zwrócić `advertiserType: "private"|"business"` |
 | `isPromoted` | promowane | ignoruj |
 
-**Pola, które musisz usunąć natychmiast po wczytaniu** (dane osobowe / treść): `advertOwner` (całe), `organisationAssignedMember` (całe), `agency` (całe; nazwy agencji JDG to imiona i nazwiska), `images`, `title`, `shortDescription`, `location.address` (ulica).
+**Pola, które musisz usunąć natychmiast po wczytaniu** (dane osobowe / treść): `advertOwner` (całe), `organisationAssignedMember` (całe), `agency` (całe; nazwy agencji JDG to imiona i nazwiska), `images`, `title`, `shortDescription`, `location.address` (ulica), `relatedAds` (zagnieżdżone pełne ogłoszenia lokali z własnymi danymi ogłoszeniodawcy i ulicą).
 
-**Rynek pierwotny/wtórny:** **potwierdzone (2026-11-18, fixture otodom_sale_katowice.json)**: oferty deweloperskie mają `developmentId > 0` (5/28 w próbce Katowice). `investmentState` bywa `null` nawet przy `developmentId > 0`. Reguła: `isPrimaryMarket = developmentId is not None and developmentId > 0`.
+**Rynek pierwotny/wtórny:** `isPrimaryMarket = developmentId > 0` (przyjęte w M1). **[DO WERYFIKACJI]** na 10 ofertach z `developmentId > 0` i 10 z `0`, czy to się zgadza z oznaczeniem rynku na stronie oferty (sprawdzenie ręczne w przeglądarce, nie przez Actora).
 
-**Sortowanie i próbkowanie:** domyślnie bierzemy pierwsze `maxListingsPerSide` ofert każdej strony rynku. Lepsza próba to najnowsze ogłoszenia: **[DO WERYFIKACJI]** parametr `by=LATEST&direction=DESC`. Jeśli działa, użyj go.
+**Kafelki `INVESTMENT`** (dawne `not_flat`): projekty deweloperskie, nie oferty — `totalPrice`, `areaInSquareMeters`, `roomsNumber` = `null`; mają `priceFromPerSquareMeter`, `investmentUnitsNumber`, zakresy metrażu i pokoi, `investmentState`, `investmentEstimatedDelivery`, `developmentId = 0`, oraz `relatedAds` (2–3 pełne ogłoszenia lokali z `developmentId == id kafelka`). Odrzucane z powodem `primary_market_project`, liczone w `RUN_SUMMARY.primaryMarketProjects`. `relatedAds` są usuwane przy parsowaniu (dane osobowe, niereprezentatywne) — wymień to w README „Limitations”. **Duplikaty:** strony całego miasta (DEFAULT) serwują te same kafelki wielokrotnie (Katowice: 178 kafelków, 36 unikalnych) — deduplikacja po `slug` musi poprzedzać liczenie (poprawione 2026-11-18). Unikalne projekty w pomiarze per dzielnica (sprzedaż): Katowice 44, Warszawa 148, Kraków 136, Wrocław 52; mediana lokali na projekt 30–50.
+
+**Sortowanie i rozmiar strony (decyzja 2026-11-18):** `by=LATEST&direction=DESC`, `limit=72`. Sonda (Warszawa, sprzedaż, 20 274 ofert): LATEST sortuje po `createdAtFirst` (99,1% par malejąco), mediana wieku 1 dzień, strony stabilne po 5 min; DEFAULT sortuje po `pushedUpAt` (płatne podbicia), strony się przesuwają (87–96% pokrycia, duplikaty i pominięcia). `limit=72` działa (72 elementy), `limit=100` po cichu zwraca 36. **Próba = bieżąca podaż** — raportuj jej wiek (§0, zadanie 4).
+- **Próbkowanie per dzielnica:** ścieżka dzielnicy potwierdzona 2026-11-18: `/_next/data/{buildId}/pl/wyniki/{tx}/mieszkanie/{locationPath}/{districtSlug}.json` z 7 × `searchingCriteria`; odpowiedź ma `tracking.listing.selected_locations_id == ["district:{locationPath}/{districtSlug}"]`. Lista dzielnic z `pageProps.data.searchLinksRelatedLocations` (fallback: odkrywanie z pierwszych stron całego miasta). Kwota na dzielnicę liczy kandydatów (`FLAT`, nie `hpr/`); oferta liczy się do dzielnicy z `reverseGeocoding`, nie do dzielnicy stronicowanej (efekt granic). Wyniki: „Pomiar decyzyjny” niżej.
+- **Granulacja dzielnic różni się między miastami:** Wrocław ma w Otodom 5 dużych dzielnic historycznych, Katowice 22, Warszawa i Kraków po 18. Wyniki pokrycia nie są porównywalne między miastami bez tej uwagi.
+
+**Pomiar decyzyjny (2026-11-18, domowe IP bez proxy, LATEST/72, progi 15/10).** Bramka = % oczyszczonych ofert sprzedaży z `saleGroupLevel == "district"` (obowiązująca); grupy = % grup `district × rooms` z oboma progami (informacyjnie). MB = bajty po dekompresji (górne oszacowanie kosztu proxy). Wiek = dni od `createdAtFirst` (mediana / najstarsza), udział = pobrane / `totalItems` miasta.
+
+| tryb | miasto | sprzedaż / najem | bramka | grupy | zapytania | MB | czas | wiek sprzedaży | udział sprzedaż / najem |
+|---|---|---|---|---|---|---|---|---|---|
+| per dzielnica 150 | Katowice | 1 585 / 737 | 80,6% | 27,7% | 105 | 38,9 | 107 s | 33 / 1 185 | 0,29 / 0,98 |
+| per dzielnica 150 | Warszawa | 3 176 / 3 126 | 98,0% | 77,8% | 107 | 48,0 | 112 s | 8 / 908 | 0,16 / 0,42 |
+| per dzielnica 150 | Kraków | 2 974 / 2 336 | 96,2% | 62,5% | 107 | 48,4 | 108 s | 19 / 1 129 | 0,21 / 0,74 |
+| per dzielnica 150 | Wrocław | 899 / 985 | 94,2% | 65,0% | 39 | 20,8 | 41 s | 2 / 9 | 0,09 / 0,42 |
+| per dzielnica 300 | Katowice | 1 676 / 737 | 81,7% | 27,7% | 116 | 43,9 | 120 s | 36,5 / 1 185 | 0,31 / 0,98 |
+| per dzielnica 300 | Warszawa | 5 083 / 4 298 | 98,7% | 83,3% | 194 | 84,2 | 204 s | 13 / 1 430 | 0,26 / 0,58 |
+| per dzielnica 300 | Kraków | 4 215 / 3 035 | 98,4% | 68,1% | 163 | 154,8* | 201 s | 26 / 1 867 | 0,30 / 0,96 |
+| per dzielnica 300 | Wrocław | 1 627 / 1 571 | 100% | 90,0% | 66 | 103,4* | 82 s | 6 / 16 | 0,16 / 0,68 |
+| całe miasto 1500 | Katowice | 1 402 / 737 | 77,2% | 25,3% | 46 | 23,4 | 47 s | 26 / 149 | 0,26 / 0,99 |
+| całe miasto 1500 | Warszawa | 1 452 / 1 465 | 82,0% | 39,1% | 44 | 22,8 | 45 s | 2 / 6 | 0,07 / 0,20 |
+| całe miasto 1500 | Kraków | 1 496 / 1 465 | 79,0% | 32,4% | 45 | 23,9 | 45 s | 6 / 13 | 0,11 / 0,46 |
+| całe miasto 1500 | Wrocław | 1 474 / 1 436 | 100% | 90,0% | 51 | 26,0 | 51 s | 5 / 11 | 0,14 / 0,61 |
+
+\* wdrożenie Otodom w trakcie pomiaru → strony HTML (3–4× większe); naprawione powrotem do `_next/data`. Blokady: 0% we wszystkich 24 stronach rynku. Porównanie z DEFAULT/36 (ten sam dzień, per dzielnica 150, Warszawa): 200 zapytań / 205 s vs 107 / 112 s przy LATEST/72 — 2× mniej, bramka podobna (96,2% vs 98,0%).
+
+**Domyślne uruchomienie `["warszawa","krakow"]`** (samo pobieranie): całe miasto 90 s, per dzielnica 150 — 220 s, per dzielnica 300 — 405 s (> 5 min ✗).
+
+**Rekomendacja (do decyzji właściciela):** per dzielnica, kwota `max(150, ceil(1500 / liczba_dzielnic))` na stronę rynku — Warszawa/Kraków/Katowice 150, Wrocław 300. Spełnia bramkę w Warszawie, Krakowie, Wrocławiu (98,0 / 96,2 / 100%) i czas domyślnego uruchomienia (~220 s). Całe miasto też przechodzi bramkę w 90 s, ale przy LATEST to próba z ostatniego tygodnia (Warszawa: mediana 2 dni, najstarsza oferta 6 dni, 7% rynku) — ocena porównywałaby nowe oferty tylko z nowymi. Stała kwota 150 jest zła dla Wrocławia (5 dzielnic → 899 ofert sprzedaży, mniej niż całe miasto, najstarsza 9 dni). **Ryzyko czasu:** ~214 zapytań przy 1 req/s to ≥ 214 s; z proxy rezydencjalnym czas zapytania może przekroczyć 1 s — zmierzyć w M3, ewentualnie obniżyć kwotę.
 
 **Pułapki Otodom (każda musi mieć test):**
 
@@ -188,45 +271,31 @@ Weryfikacja: w odpowiedzi `pageProps.tracking.listing.selected_locations_id` mus
 6. Stare oferty stale podbijane (np. `createdAtFirst` z 2023) — to nie błąd, to sygnał (`daysOnMarket` duże).
 7. Oferta spoza miasta: zostaw tylko te, których `reverseGeocoding.locations[]` zawiera `id == locationPath` miasta.
 
-### 6.2 Sreality (Czechy)
+### 6.2 Sreality (Czechy) — WYŁĄCZONE
 
-**Dostęp:** nieudokumentowane JSON API serwisu (używane przez kilka Actorów w Apify Store, brak DataDome/Akamai):
+`robots.txt` sreality.cz: `User-agent: *` → `Disallow: /`. Decyzja właściciela z 2026-11-18: źródło usunięte z repo (§0). Nie przywracaj go bez oficjalnego API lub pisemnej zgody Seznamu.
 
-```
-GET https://www.sreality.cz/api/cs/v2/estates
-    ?category_main_cb=1            # 1 = byty (mieszkania)
-    &category_type_cb=1            # 1 = prodej (sprzedaż), 2 = pronájem (najem)
-    &locality_region_id=10         # Praha  [DO WERYFIKACJI]
-    &locality_district_id=72       # Brno-město  [DO WERYFIKACJI]
-    &per_page=60&page={n}
-```
+### 6.2a Czeskie alternatywy do sprawdzenia (zadanie w M2)
 
-**potwierdzone (2026-11-18):** Sreality przeszło na Next.js. Endpoint `/api/cs/v2/estates` zwraca 404. Dane dostępne przez:
-1. HTML strony wyników z osadzonym `__NEXT_DATA__` JSON (tak jak Otodom)
-2. `_next/data/{buildId}/cs/hledani/{tx}/byty/{city}.json?strana={page}` z nagłówkiem `x-nextjs-data: 1`
+Dla każdej sprawdź i opisz w PR: `robots.txt` dla `User-agent: *` (czy ścieżki wyszukiwania i ewentualne `/_next/data/` lub API są dozwolone), liczbę ofert mieszkań na sprzedaż i wynajem w Pradze, Brnie i Ostrawie, sposób dostępu do danych (JSON w stronie, API), ochronę antybotową. Nie uruchamiaj pełnego pobierania z serwisu, zanim `robots.txt` nie zostanie sprawdzony — do oceny liczby ofert wystarczy strona wyników w przeglądarce.
 
-Dane w `pageProps.dehydratedState.queries[]` pod kluczem `estatesSearch`. Paginacja: `{limit: 22, offset, total, totalWithPromo}`. Wyniki w `state.data.results[]`. Oferta: `id` (int), `name` (np. "Prodej bytu 2+kk 54 m²"), `priceCzk` (int), `priceCzkPerSqM` (int), `locality` (obiekt z `city`, `cityPart` = dzielnica, `district`, `districtId`, `citySeoName`), `categorySubCb` ({name, value} — np. "2+kk"/4), `categoryTypeCb` ({name, value} — 1=prodej, 2=pronájem).
+1. `bezrealitky.cz` — oferty bez pośredników, Next.js
+2. `reality.idnes.cz`
+3. inne portale z dużą liczbą ofert w tych miastach, jeśli znajdziesz
 
-**Lokalizacje (do weryfikacji na żywo):**
+Kryterium wyboru: `robots.txt` pozwala na ścieżki, których używamy, i liczba ofert wystarcza do bramki (≥ 70% ocenionych ofert sprzedaży porównanych na poziomie dzielnicy). Jeśli żadna alternatywa nie przejdzie, wersja 1.0 wychodzi tylko z Polską, a Czechy dochodzą później.
 
-| Miasto | Parametr | Wartość |
+**Wynik przeglądu (2026-11-18; tylko `robots.txt` + jedna strona wyników na portal, Praha, sprzedaż mieszkań):**
+
+| | `bezrealitky.cz` | `reality.idnes.cz` |
 |---|---|---|
-| `praha` | `locality_region_id` | 10 [DO WERYFIKACJI] |
-| `brno` | `locality_district_id` | 72 **potwierdzone (2026-11-18, fixture sreality_sale_brno.json)** — ale uwaga: Sreality przeszło na Next.js, stary parametr nie działa. URL: `/hledani/prodej/byty/brno` |
-| `ostrava` | `locality_district_id` | [DO USTALENIA] |
+| `robots.txt` (`User-agent: *`) | `Disallow: /vyhledat*`, `/search*`, `/moje-bezrealitky/*`, `*callbackUrl=*`, formularze hipoteki. Strony katalogu `/vypis/...` i `/_next/data/` **nie** są zablokowane | `Allow: /`; wyniki `/s/...` dozwolone, zablokowane m.in. `page` + `sort`, wielowartościowe filtry (`|`), `s-rd`, `cena-nad-`, popupy, `/broker-evaluation/` |
+| Strona sprawdzona | `/vypis/nabidka-prodej/byt/praha` (HTTP 200) | `/s/prodej/byty/praha/` (HTTP 200) |
+| Dane | Next.js; oferty w `pageProps.apolloCache` (pamięć GraphQL), 15 na stronę: `price`, `surface`, `disposition` (`DISP_2_KK`), `charges`, adres, `gps`. Wewnętrzna nazwa strony Next.js to `/search/[[...list]]` | HTML renderowany na serwerze (bez JSON), 27 kart na stronę: układ i metraż w tytule karty, ulica + dzielnica („Praha 10 - Vršovice”), cena |
+| Oferty (Praha, sprzedaż) | 617 (`totalCount`) — tylko oferty bez pośredników | 4 751 |
+| Ochrona | brak captchy przy jednym zapytaniu | brak captchy przy jednym zapytaniu |
 
-**Pola (potwierdzone 2026-11-18, fixture sreality_sale_brno.json):** odpowiedź w `dehydratedState.queries[estatesSearch].state.data`: `{pagination: {limit, offset, total, totalWithPromo}, results: [...]}`. Oferta: `id` (int), `name` (np. „Prodej bytu 2+kk 54 m²”), `locality` (obiekt: `city`, `cityPart`, `citySeoName`, `district`, `districtId`, `quarter`, `quarterId`), `priceCzk` (int), `priceCzkPerSqM` (int), `categorySubCb` ({name, value}), `categoryTypeCb` ({name, value}), `premiseId` (ID agencji, null = prywatny). URL oferty: `https://www.sreality.cz/detail/{categoryTypeCb.name.lower()}/byt/{categorySubCb.name.lower()}/{citySeoName}/{id}`.
-
-**Parsowanie:**
-- metraż z `name`: regex `(\d+(?:[.,]\d+)?)\s*m²`
-- układ z `name`: regex `(\d)\s*\+\s*(kk|\d)`; liczba pokoi = pierwsza cyfra (`2+kk` i `2+1` → 2). „Atypický”, „pokoj” → `None`, odrzuć.
-- dzielnica: **potwierdzone (2026-11-18)** — `locality.cityPart` zawiera nazwę dzielnicy (np. „Žebětín”, „Trnitá”); `locality.quarter` zawiera szerszą nazwę (np. „Brno-Žebětín”). Używamy `cityPart` jako district.
-- najem: `price` to miesięczny czynsz najmu; tekstowe „+ poplatky”, „+ energie” ignorujemy (bierzemy sam najem)
-
-**Pułapki Sreality:**
-1. Ceny zastępcze → odrzuć gdy `priceCzk <= 1` **potwierdzone (2026-11-18)**: w fixture nie widać takiego przypadku, ale logika jest zaimplementowana w parserze.
-2. Licytacje/dražby w wynikach (jeśli są oznaczone) → odrzuć z median.
-3. Duplikaty między stronami → deduplikuj po `hash_id`.
+Rekomendacja: `reality.idnes.cz` jako główny kandydat (wolumen, dozwolone zwykłe strony wyników bez `sort`; parser HTML), `bezrealitky.cz` najwyżej jako uzupełnienie (mały wolumen; publiczne `/vypis` dozwolone, ale wewnętrzna trasa nazywa się `search`, a `/search*` jest zablokowane — w duchu decyzji 1 to wątpliwość). Przed decyzją właściciel: liczby ofert w przeglądarce dla Pragi (najem), Brna i Ostrawy (sprzedaż, najem) oraz regulaminy obu serwisów (`robots.txt` nie zastępuje regulaminu). Parsera nie pisano.
 
 ### 6.3 Kurs walut (EBC)
 
@@ -239,9 +308,9 @@ Dane w `pageProps.dehydratedState.queries[]` pod kluczem `estatesSearch`. Pagina
 ```python
 @dataclass
 class Listing:
-    source: str               # "otodom" | "sreality"
+    source: str               # "otodom"
     listing_id: str
-    dedup_key: str            # otodom: slug, sreality: hash_id
+    dedup_key: str            # otodom: slug
     url: str
     country: str              # "PL" | "CZ"
     city: str                 # nazwa wyświetlana, np. "Kraków"
@@ -279,9 +348,12 @@ class Listing:
 
 **Grupa:** `(country, city, district, roomsBucket)`, gdzie `roomsBucket ∈ {1, 2, 3, "4+"}` (`rooms is None` → oferta nie wchodzi do grup pokojowych, ale wchodzi do poziomu „city”).
 
-**Fallback:** grupa potrzebuje `saleCount ≥ minSaleSample` (domyślnie 15) **i** `rentCount ≥ minRentSample` (domyślnie 10). Jeśli dzielnica nie spełnia → `(city, roomsBucket)` → `(city)`. Zapisz `groupLevel ∈ {"district", "city_rooms", "city"}`.
+**Fallback — osobno dla sprzedaży i najmu** (zmiana 2026-11-18):
+- poziom sprzedaży (`saleGroupLevel`): pierwszy z `district × rooms` → `city × rooms` → `city`, na którym `saleCount ≥ minSaleSample` (15); z niego `median(p)`, `MAD`, `dealScore`, `discountVsMedianPct`;
+- poziom najmu (`rentGroupLevel`): pierwszy z tej samej listy, na którym `rentCount ≥ minRentSample` (10); z niego `median(r)` do `estimatedRentMonthlyEur` i rentowności oferty;
+- rekord `areaYield` powstaje tylko dla grup, gdzie **oba** progi są spełnione na tym samym poziomie; `groupLevel` w `areaYield` = ten poziom.
 
-**Pewność `confidence`:** `high` gdy `groupLevel == "district"` i `saleCount ≥ 40`; `medium` gdy `groupLevel == "district"` (15–39) albo `city_rooms`; `low` gdy `city`.
+**Pewność `confidence`** (w `scoredListing` liczona z gorszego z dwóch poziomów): `high` gdy poziom `district` i `saleCount ≥ 40`; `medium` gdy `district` (15–39) albo `city_rooms`; `low` gdy `city`.
 
 **Mediany i kwartyle:** cena sprzedaży za m² (`p`) i miesięczny najem za m² (`r`) w EUR. Kwartyle metodą `statistics.quantiles(n=4, method="inclusive")`.
 
@@ -318,18 +390,20 @@ Domyślne uruchomienie bez ustawień ma dać sensowny wynik w kilka minut (Warsz
 
 | Pole | Typ | Domyślnie | Opis |
 |---|---|---|---|
-| `cities` | array (enum) | `["warszawa","praha"]` | `warszawa, krakow, wroclaw, katowice, praha, brno, ostrava` |
+| `cities` | array (enum) | `["warszawa","krakow"]` | `warszawa, krakow, wroclaw, katowice` (Czechy po wyborze źródła, §6.2a) |
 | `mode` | string enum | `both` | `yieldReport` (tylko grupy), `scoreListings` (tylko oferty), `both` |
 | `rooms` | array int | `[1,2,3,4]` | 4 = 4 i więcej |
 | `areaMin` / `areaMax` | integer | 15 / 250 | m² |
-| `maxListingsPerSide` | integer | 1500 | limit ofert sprzedaży i osobno najmu na miasto |
+| `samplingMode` | enum | do decyzji po pomiarze (§0, zadanie 6) | `city` (najnowsze N ofert miasta) albo `perDistrict` (kwota najnowszych ofert na dzielnicę) |
+| `maxListingsPerSide` | integer | 1500 | tryb `city`: limit ofert sprzedaży i osobno najmu na miasto |
+| `maxListingsPerDistrict` | integer | do decyzji po pomiarach | tryb `perDistrict`: limit na dzielnicę i stronę rynku; `maxListingsPerSide` jest wtedy ignorowany (opisz to w polu) |
 | `minScore` | integer 0–100 | 0 | zwraca tylko oferty z oceną ≥ |
 | `includePrimaryMarket` | boolean | true | czy liczyć rynek pierwotny |
 | `minSaleSample` / `minRentSample` | integer | 15 / 10 | próg grupy przed fallbackiem |
 | `onlyNewOrChanged` | boolean | false | monitoring: tylko nowe oferty i obniżki |
 | `stateKey` | string | `default` | nazwa pamięci monitoringu |
 | `outputCurrency` | enum | `EUR` | `EUR` / `local` — waluta sortowania; lokalna zawsze obecna |
-| `proxyConfiguration` | object (editor `proxy`) | `{"useApifyProxy": true, "apifyProxyGroups": ["RESIDENTIAL"], "apifyProxyCountry": "PL"}` | Otodom: rezydencjalne PL; Sreality może iść bez rezydencjalnych |
+| `proxyConfiguration` | object (editor `proxy`) | `{"useApifyProxy": true, "apifyProxyGroups": ["RESIDENTIAL"], "apifyProxyCountry": "PL"}` | Otodom: rezydencjalne PL; czeskie źródło: do ustalenia. Potwierdzone w źródle SDK `apify` 4.3.0 (`_actor.py`, `create_proxy_configuration`): czyta `useApifyProxy`, `apifyProxyCountry`, `apifyProxySubdivision`, `apifyProxyGroups`, `proxyUrls`; jawny argument `country_code=` ma pierwszeństwo przed inputem |
 
 ---
 
@@ -364,7 +438,7 @@ Jeden dataset, typ rekordu w polu `recordType`. Nazwy pól camelCase. Przykład 
   "pricePerM2Eur": 2977, "groupMedianPricePerM2Eur": 3420,
   "dealScore": 87, "discountVsMedianPct": 12.95,
   "estimatedRentMonthlyEur": 690, "grossYieldPct": 5.79,
-  "groupLevel": "district", "confidence": "high",
+  "saleGroupLevel": "district", "rentGroupLevel": "city_rooms", "confidence": "medium",
   "priceCutPct": 4.7, "daysOnMarket": 38,
   "firstSeenAt": "2026-10-10", "changeType": "priceCut"
 }
@@ -387,17 +461,19 @@ Gdy `onlyNewOrChanged = true`: otwórz nazwany key-value store `cee-rental-yield
 
 - Limiter: 1 zapytanie/s na domenę (otodom.pl, sreality.cz, ecb.europa.eu osobno). Miasta można przetwarzać równolegle, jeśli są z różnych domen.
 - Retry: 3 próby z backoffem wykładniczym + jitter na 429/5xx/timeout. 403 i strona z captchą = blokada: licz w `blocked`, zmień sesję proxy, ponów raz.
-- Jeśli blokady > 20% zapytań do domeny → przerwij to źródło z błędem opisowym („Otodom blocked X of Y requests; try residential proxy PL”).
+- Jeśli blokady > 20% zapytań (min. 10 zapytań) w oknie **miasto × strona rynku** → przerwij to źródło z błędem opisowym („www.otodom.pl blocked X of Y requests (katowice sale); try residential proxy PL”). Okno, nie licznik skumulowany dla domeny (zrobione 2026-11-18).
 - Proxy: `await Actor.create_proxy_configuration(actor_proxy_input=...)`, URL per sesja. Lokalnie bez Apify proxy (zmienna środowiskowa lub brak tokena) → bez proxy.
 - `scripts/measure.py`: uruchamia pełne pobieranie dla wskazanych miast i wypisuje tabelę: strony, oferty, % blokad, czas, bajty pobrane (do szacowania kosztu proxy), % grup z pełną próbą.
 
-**Bramka decyzyjna po weekendzie 1** (do zapisania w PR / README dla autora): blokady ≤ 5%, koszt proxy ≤ $1 na miasto (bajty × cena GB proxy), ≥ 70% grup dzielnica × pokoje z pełną próbą. Jeśli nie przechodzi — zmieniamy miasta, próbkowanie albo źródło, zanim powstanie reszta.
+**Bramka decyzyjna po weekendzie 1** (do zapisania w PR / README dla autora): blokady ≤ 5%, koszt proxy ≤ $1 na miasto (bajty × cena GB proxy), ≥ 70% oczyszczonych ofert sprzedaży porównanych na poziomie dzielnicy (`saleGroupLevel == "district"`; mianownik = wszystkie oczyszczone oferty sprzedaży miasta). Jeśli nie przechodzi — zmieniamy miasta, próbkowanie albo źródło, zanim powstanie reszta.
+
+**Stan bramki (2026-11-18, domowe IP):** kryterium 1 — 0% blokad (do powtórzenia na Apify z proxy, M3); kryterium 2 — per dzielnica 150: max 48,4 MB/miasto → ≤ $0,39 przy $8/GB (bajty po dekompresji, górne oszacowanie); kryterium 3 — per dzielnica 150: Warszawa 98,0%, Kraków 96,2%, Wrocław 94,2% (Katowice 80,6%, informacyjnie). Uwaga: poziom `city` zawiera wszystkie oferty sprzedaży, więc oferta nieoceniana występuje tylko w mieście z < 15 ofertami sprzedaży.
 
 ---
 
 ## 14. Fixtures — co jest i co trzeba pobrać
 
-**Jest:** `tests/fixtures/otodom_rent_katowice.json` — odpowiedź `_next/data` najmu w Katowicach (17.11.2026), 37 elementów (36 + wstawka `hpr/`), `pagination.totalItems = 770`, `faqDynamicData.avgPricePerM = 54`. Imiona, nazwiska i nazwy agencji są **zanonimizowane** („Agent Testowy N”, „Agencja Testowa N”, „Osoba Prywatna N”), zdjęcia przycięte do jednego, mapy usunięte. Struktura i wszystkie pozostałe pola są oryginalne.
+**Jest:** `tests/fixtures/otodom_rent_katowice.json` — odpowiedź `_next/data` najmu w Katowicach (17.11.2026), 37 elementów (36 + wstawka `hpr/`), `pagination.totalItems = 770`, `faqDynamicData.avgPricePerM = 54`; `tests/fixtures/otodom_sale_katowice.json` — sprzedaż Katowice, 28 elementów (20 `FLAT` + 8 `INVESTMENT`); `tests/fixtures/ecb_daily.xml`. Obie fixtures Otodom przeszły przez `scripts/anonymize_fixture.py` (2026-11-18): nazwy osób, agencji i kontaktów („Agent Testowy N”, „Agencja Testowa N”, „Osoba Prywatna N”, „Kontakt Testowy N”), `firstName`/`lastName`, `userID`/`profileID`, adresy zdjęć, ulice, tytuły i opisy — także w zagnieżdżonych `relatedAds`; zdjęcia przycięte do jednego, mapy usunięte. Pozostałe pola i struktura są oryginalne. Wcześniejsze wersje usunięto z historii git (2026-11-18). `tests/test_fixtures_pii.py` sprawdza każdą fixture rekurencyjnie.
 
 **Do pobrania przez autora (Claude Code: poproś o to, jeśli pliku nie ma):**
 
@@ -413,7 +489,7 @@ curl -s "https://www.otodom.pl/_next/data/$BUILD/pl/wyniki/sprzedaz/mieszkanie/s
   -H 'User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36' \
   > tests/fixtures/otodom_sale_katowice.json
 
-# 3) Sreality Brno sprzedaż i najem (ID lokalizacji do weryfikacji)
+# 3) [NIEAKTUALNE: Sreality wyłączone — §6.2; nie uruchamiać] Sreality Brno sprzedaż i najem
 curl -s "https://www.sreality.cz/api/cs/v2/estates?category_main_cb=1&category_type_cb=1&locality_district_id=72&per_page=60&page=1" > tests/fixtures/sreality_sale_brno.json
 curl -s "https://www.sreality.cz/api/cs/v2/estates?category_main_cb=1&category_type_cb=2&locality_district_id=72&per_page=60&page=1" > tests/fixtures/sreality_rent_brno.json
 
@@ -421,7 +497,7 @@ curl -s "https://www.sreality.cz/api/cs/v2/estates?category_main_cb=1&category_t
 curl -s https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml > tests/fixtures/ecb_daily.xml
 ```
 
-**Przed commitem każdej nowej fixture zanonimizuj ją** skryptem `scripts/anonymize_fixture.py` (napisz go: podmień `advertOwner`, `organisationAssignedMember`, `agency.name/slug`, kontakty, ulice na wartości testowe; przytnij `images` do jednego; usuń mapy). Repo może być publiczne — danych osobowych w nim nie ma być nigdy.
+**Przed commitem każdej nowej fixture zanonimizuj ją** skryptem `scripts/anonymize_fixture.py` i uruchom `pytest tests/test_fixtures_pii.py`. Jeśli nowa fixture ma pola osobowe, których skrypt nie zna, rozszerz skrypt i strażnika, zanim zrobisz commit. Repo może być publiczne — danych osobowych w nim nie ma być nigdy.
 
 ---
 
@@ -432,8 +508,8 @@ curl -s https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml > tests/fi
 {
   "actorSpecification": 1,
   "name": "cee-rental-yield",
-  "title": "Rental Yield & Deal Score – Poland & Czechia",
-  "description": "Gross rental yield by district and a 0–100 deal score for every apartment for sale in Warsaw, Kraków, Wrocław, Prague, Brno and Ostrava. In EUR.",
+  "title": "Rental Yield & Deal Score",
+  "description": "Gross rental yield by district and a 0–100 deal score for every apartment for sale in Warsaw, Kraków, Wrocław and Katowice. In EUR.",
   "version": "0.1",
   "buildTag": "latest",
   "input": "./input_schema.json",
@@ -469,7 +545,7 @@ Sekcje: tytuł → dwa zdania „co i dla kogo” → **What you get** (yield pe
 Gotowy początek (użyj go):
 
 ```markdown
-# Rental Yield & Deal Score – Poland & Czechia
+# Rental Yield & Deal Score
 
 Where does a rental apartment earn the most in Central Europe, and which listing is priced below its neighbourhood?
 One run samples both sides of the local market – apartments for sale and for long-term rent – and returns:
@@ -487,21 +563,25 @@ Dodatkowo w Apify: trzy „examples” (zapisane zadania z gotowym wejściem): �
 
 ## 17. Kamienie milowe i definicja ukończenia
 
-**M1 — źródła i pomiar (weekend 1)**
-- [ ] szkielet repo z §5, `pytest` przechodzi
-- [ ] fixtures z §14 pobrane i zanonimizowane; skrypt `anonymize_fixture.py`
-- [ ] `sources/otodom.py`: discovery `buildId`, katalog `_next/data`, paginacja, fallback HTML, parser → surowe elementy
-- [ ] `sources/sreality.py`: katalog, paginacja, parser
-- [ ] `clean.py` ze wszystkimi pułapkami z §6 i §8, każda z testem (w tym `id=68642713` zamienione pola, `id=9000062324` wstawka `hpr/`)
-- [ ] `http.py` z limiterem, retry, licznikiem blokad, proxy
-- [ ] `scripts/measure.py` + wyniki pomiaru dla 6 miast (+ Katowice) w opisie PR
-- [ ] decyzja z bramki §13
+**M1 — źródła i pomiar (weekend 1)** — gotowe
+- [x] szkielet repo z §5, `pytest` przechodzi
+- [x] fixtures z §14 pobrane i zanonimizowane; skrypt `anonymize_fixture.py`
+- [x] `sources/otodom.py`: discovery `buildId`, katalog `_next/data`, paginacja, fallback HTML, parser
+- [x] `sources/sreality.py` — usunięte (robots.txt)
+- [x] `clean.py` ze wszystkimi pułapkami z §6 i §8, z testami
+- [x] `http.py` z limiterem, retry, licznikiem blokad, proxy
+- [x] `scripts/measure.py` + pomiar 7 miast
+- [x] **kryterium 3 bramki** dla 4 miast PL (metryka ważona ofertami, §13)
+- [x] wyjaśnienie `not_flat` (kafelki `INVESTMENT`), sonda `by=LATEST` i `limit`
+- [ ] decyzja z bramki §13 — dane i rekomendacja w §6.1, decyzja właściciela
 
 **M2 — statystyka (weekend 2)**
-- [ ] `fx.py` z testem na XML
-- [ ] `stats.py` ze wzorami z §9, testy syntetyczne
-- [ ] `output.py`: rekordy `areaYield`, `scoredListing`, `RUN_SUMMARY`
-- [ ] ręczna weryfikacja 20 ofert na kraj (cena/m², przypisanie grupy) — lista w PR
+- [x] usunięcie Sreality z repo
+- [x] czeskie źródło: przegląd alternatyw (§6.2a) i rekomendacja w PR — decyzja właściciela
+- [x] `fx.py` z testem na XML
+- [x] `stats.py` ze wzorami z §9 (niezależny fallback sprzedaży i najmu), testy syntetyczne
+- [ ] `output.py`: rekordy `areaYield`, `scoredListing` — są; `RUN_SUMMARY` — na razie wpis per strona rynku (`build_side_summary`), całość w M3
+- [ ] ręczna weryfikacja 20 ofert (PL) — CSV gotowy (`storage/m2_review_sample.csv`), sprawdza właściciel
 
 **M3 — Actor (weekend 3)**
 - [ ] `input_schema.json`, `dataset_schema.json`, `actor.json`, `Dockerfile`
@@ -509,6 +589,7 @@ Dodatkowo w Apify: trzy „examples” (zapisane zadania z gotowym wejściem): �
 - [ ] monitoring (`monitor.py`) z testem
 - [ ] README (§16), trzy przykłady
 - [ ] test na prywatnym Actorze w Apify: domyślne uruchomienie < 5 min, koszt pełnej oceny miasta < 25% przychodu z uruchomienia
+- [ ] **ponowny pomiar blokad na platformie Apify z proxy** (M1 mierzył z domowego IP bez proxy) — kryterium 1 bramki obowiązuje dla środowiska produkcyjnego
 
 **M4 — publikacja (weekend 4)**
 - [ ] Actor publiczny w Apify Store pod `pl-datanest`, ceny ustawione przez właściciela
@@ -523,11 +604,14 @@ Dodatkowo w Apify: trzy „examples” (zapisane zadania z gotowym wejściem): �
 - Logi: liczby i kody, nigdy treść ogłoszeń ani dane osobowe.
 - Aktualizuj ten plik, gdy coś z **[DO WERYFIKACJI]** zostanie potwierdzone albo obalone: zamień oznaczenie na „potwierdzone (data, fixture)” albo popraw opis.
 
-## 19. Otwarte pytania (do rozstrzygnięcia w M1)
+## 19. Otwarte pytania (stan 2026-11-18, noc)
 
-1. Czy `/_next/data/` na otodom.pl jest dozwolone w aktualnym `robots.txt`?
-2. Wartość `transaction` dla sprzedaży w Otodom (`SELL`?) i czy `developmentId` oznacza rynek pierwotny.
-3. Czy działa `by=LATEST` i jaki jest maksymalny `limit` na stronę (36? 72?).
-4. Slugi Otodom dla Warszawy, Krakowa, Wrocławia.
-5. Aktualny endpoint Sreality, ID lokalizacji Praha/Brno/Ostrava, format cen zastępczych, wzór URL oferty.
-6. Czy Otodom ogranicza liczbę stron wyników dla dużych miast (Warszawa) — jeśli tak, próbkowanie per dzielnica przez `searchLinksRelatedLocations`.
+Rozstrzygnięte: `robots.txt` Otodom, `transaction`, slugi miast, ścieżka i lista dzielnic (fixture + żywe: Warszawa 18, Wrocław 5), `INVESTMENT` = kafelki projektów, sortowanie LATEST + `limit=72`, definicja i mianownik bramki, nazwa produktu, przepisanie historii git, Sreality wyłączone.
+
+Rozstrzygnięte też (2026-11-18, późno): wynik bramki po LATEST/72 (§13), klucze proxy w SDK (`apifyProxyCountry` czytane z inputu, §10), `limit=100` → po cichu 36, strona 1 HTML honoruje LATEST/72.
+
+Otwarte:
+1. Domyślny tryb próbkowania i kwota na dzielnicę — rekomendacja w §6.1 (per dzielnica, `max(150, ceil(1500 / liczba_dzielnic))`), decyzja właściciela.
+2. Czy `developmentId > 0` zgadza się z rynkiem pierwotnym (część weryfikacji ręcznej, CSV z §0 zadanie 7).
+3. Czeskie źródło (§6.2a): kandydat `reality.idnes.cz`; brakuje liczb ofert dla Pragi (najem), Brna, Ostrawy i przeglądu regulaminów — decyzja właściciela.
+4. Blokady i czas zapytania na platformie Apify z proxy rezydencjalnym PL (M3) — wpływa na „domyślne uruchomienie < 5 min”.
