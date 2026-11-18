@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from src.fx import convert_to_eur
 from src.models import AreaYield, Listing, ScoredListing
 from src.stats import (
-    GroupStats, deal_score, discount_vs_median_pct, gross_yield_pct,
+    GroupStats, ListingComparables, deal_score, discount_vs_median_pct, gross_yield_pct,
     gross_yield_range, median_val, quartiles,
 )
 
@@ -69,7 +69,7 @@ def build_area_yield(
 
 def build_scored_listing(
     listing: Listing,
-    group: GroupStats,
+    comparables: ListingComparables,
     fx_rates: dict[str, float],
 ) -> dict:
     price_eur = convert_to_eur(listing.price_local, listing.currency, fx_rates)
@@ -77,18 +77,19 @@ def build_scored_listing(
 
     s_ppm2_eur = [
         convert_to_eur(ls.price_local / ls.area_m2, ls.currency, fx_rates)
-        for ls in group.sale_listings
+        for ls in comparables.sale_listings
     ]
     median_ppm2 = median_val(s_ppm2_eur)
 
-    r_ppm2_eur = [
-        convert_to_eur(p, listing.currency, fx_rates)
-        for p in group.rent_per_m2
-    ]
-    median_rent = median_val(r_ppm2_eur)
-
-    est_rent = median_rent * listing.area_m2
-    gyp = 12 * est_rent / price_eur * 100 if price_eur > 0 else 0.0
+    est_rent = None
+    gyp = None
+    if comparables.rent_level is not None:
+        r_ppm2_eur = [
+            convert_to_eur(ls.price_local / ls.area_m2, ls.currency, fx_rates)
+            for ls in comparables.rent_listings
+        ]
+        est_rent = median_val(r_ppm2_eur) * listing.area_m2
+        gyp = 12 * est_rent / price_eur * 100 if price_eur > 0 else None
     score = deal_score(ppm2_eur, s_ppm2_eur)
     discount = discount_vs_median_pct(ppm2_eur, median_ppm2)
 
@@ -117,9 +118,10 @@ def build_scored_listing(
         "groupMedianPricePerM2Eur": round(median_ppm2),
         "dealScore": score,
         "discountVsMedianPct": round(discount, 2),
-        "estimatedRentMonthlyEur": round(est_rent),
-        "grossYieldPct": round(gyp, 2),
-        "groupLevel": group.group_level,
-        "confidence": group.confidence,
+        "estimatedRentMonthlyEur": round(est_rent) if est_rent is not None else None,
+        "grossYieldPct": round(gyp, 2) if gyp is not None else None,
+        "saleGroupLevel": comparables.sale_level,
+        "rentGroupLevel": comparables.rent_level,
+        "confidence": comparables.confidence,
         "daysOnMarket": dom,
     }

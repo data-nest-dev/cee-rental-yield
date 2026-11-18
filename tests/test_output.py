@@ -4,7 +4,7 @@ from datetime import date
 
 from src.models import Listing
 from src.output import build_area_yield, build_scored_listing
-from src.stats import GroupStats
+from src.stats import GroupStats, ListingComparables
 
 
 def _make_listing(transaction: str = "sale", **kwargs) -> Listing:
@@ -78,20 +78,47 @@ class TestBuildAreaYield:
         assert result["local"]["currency"] == "PLN"
 
 
+def _make_comparables(rent_level: str | None = "city_rooms") -> ListingComparables:
+    g = _make_group()
+    return ListingComparables(
+        sale_level="district",
+        sale_listings=g.sale_listings,
+        rent_level=rent_level,
+        rent_listings=g.rent_listings if rent_level else [],
+        confidence="medium",
+    )
+
+
 class TestBuildScoredListing:
     def test_record_type(self) -> None:
-        group = _make_group()
         ls = _make_listing("sale")
-        rates = {"PLN": 4.4}
-        result = build_scored_listing(ls, group, rates)
+        result = build_scored_listing(ls, _make_comparables(), {"PLN": 4.4})
         assert result["recordType"] == "scoredListing"
-        assert result["dealScore"] >= 0
-        assert result["dealScore"] <= 100
+        assert 0 <= result["dealScore"] <= 100
 
     def test_has_yield_estimate(self) -> None:
-        group = _make_group()
         ls = _make_listing("sale")
-        rates = {"PLN": 4.4}
-        result = build_scored_listing(ls, group, rates)
+        result = build_scored_listing(ls, _make_comparables(), {"PLN": 4.4})
         assert result["estimatedRentMonthlyEur"] > 0
         assert result["grossYieldPct"] > 0
+
+    def test_reports_both_levels(self) -> None:
+        ls = _make_listing("sale")
+        result = build_scored_listing(ls, _make_comparables(), {"PLN": 4.4})
+        assert result["saleGroupLevel"] == "district"
+        assert result["rentGroupLevel"] == "city_rooms"
+        assert "groupLevel" not in result
+
+    def test_estimated_rent_hand_computed(self) -> None:
+        # rents 2000..2700 PLN step 50 over 50 m2 -> median 2350 / 50 = 47 PLN/m2 -> /4.4 EUR; x 50 m2
+        ls = _make_listing("sale", price_local=440000.0)
+        result = build_scored_listing(ls, _make_comparables(), {"PLN": 4.4})
+        assert result["estimatedRentMonthlyEur"] == round(47 / 4.4 * 50)
+        assert result["grossYieldPct"] == round(12 * 47 * 50 / 440000 * 100, 2)
+
+    def test_no_rent_level_means_no_yield_estimate(self) -> None:
+        ls = _make_listing("sale")
+        result = build_scored_listing(ls, _make_comparables(rent_level=None), {"PLN": 4.4})
+        assert result["estimatedRentMonthlyEur"] is None
+        assert result["grossYieldPct"] is None
+        assert result["rentGroupLevel"] is None

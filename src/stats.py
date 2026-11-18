@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from src.models import Listing
 
 
+LEVELS = ("district", "city_rooms", "city")
+
+
 @dataclass
 class GroupStats:
     country: str
@@ -21,94 +24,128 @@ class GroupStats:
     rent_per_m2: list[float]
 
 
+@dataclass
+class GroupIndex:
+    """Listings per (level, key) for each side; key = (country, city, district, roomsBucket)."""
+    sale: dict[tuple, list[Listing]]
+    rent: dict[tuple, list[Listing]]
+
+
+@dataclass
+class ListingComparables:
+    sale_level: str
+    sale_listings: list[Listing]
+    rent_level: str | None
+    rent_listings: list[Listing]
+    confidence: str
+
+
+def group_keys(ls: Listing) -> list[tuple]:
+    """(level, key) from finest to coarsest that this listing belongs to."""
+    rb = _rooms_bucket(ls.rooms)
+    keys = []
+    if ls.district and rb:
+        keys.append(("district", (ls.country, ls.city, ls.district, rb)))
+    if rb:
+        keys.append(("city_rooms", (ls.country, ls.city, None, rb)))
+    keys.append(("city", (ls.country, ls.city, None, None)))
+    return keys
+
+
+def index_groups(listings: list[Listing]) -> GroupIndex:
+    index = GroupIndex(sale={}, rent={})
+    for ls in listings:
+        side = index.sale if ls.transaction == "sale" else index.rent
+        for level_key in group_keys(ls):
+            side.setdefault(level_key, []).append(ls)
+    return index
+
+
+def _confidence(level: str | None, sale_count: int) -> str:
+    if level == "district":
+        return "high" if sale_count >= 40 else "medium"
+    if level == "city_rooms":
+        return "medium"
+    return "low"
+
+
+def resolve_comparables(
+    listing: Listing,
+    index: GroupIndex,
+    min_sale_sample: int = 15,
+    min_rent_sample: int = 10,
+) -> ListingComparables | None:
+    """Sale and rent fall back independently; None if no level has enough sales to score against."""
+    keys = group_keys(listing)
+    sale = next(((lvl, index.sale[(lvl, k)]) for lvl, k in keys
+                 if len(index.sale.get((lvl, k), [])) >= min_sale_sample), None)
+    if sale is None:
+        return None
+    rent = next(((lvl, index.rent[(lvl, k)]) for lvl, k in keys
+                 if len(index.rent.get((lvl, k), [])) >= min_rent_sample), (None, []))
+
+    sale_level, sale_listings = sale
+    rent_level, rent_listings = rent
+    worse = max(LEVELS.index(sale_level), LEVELS.index(rent_level) if rent_level else len(LEVELS))
+    worse_level = LEVELS[worse] if worse < len(LEVELS) else None
+    return ListingComparables(
+        sale_level=sale_level,
+        sale_listings=sale_listings,
+        rent_level=rent_level,
+        rent_listings=rent_listings,
+        confidence=_confidence(worse_level, len(sale_listings)),
+    )
+
+
 def compute_groups(
     listings: list[Listing],
     min_sale_sample: int = 15,
     min_rent_sample: int = 10,
 ) -> list[GroupStats]:
-    sale = [ls for ls in listings if ls.transaction == "sale"]
-    rent = [ls for ls in listings if ls.transaction == "rent"]
-
-    sale_by_group = _group_listings(sale)
-    rent_by_group = _group_listings(rent)
-
-    all_keys = set(sale_by_group.keys()) | set(rent_by_group.keys())
-    district_keys = [k for k in all_keys if k[1] is not None]
-
+    """areaYield groups: every group, at any level, where both thresholds hold at that level."""
+    index = index_groups(listings)
     results: list[GroupStats] = []
-
-    for key in district_keys:
-        country, district, city, rooms = key[0], key[1], key[2], key[3]
-        s = sale_by_group.get(key, [])
-        r = rent_by_group.get(key, [])
-
-        s_ppm2 = [ls.price_local / ls.area_m2 for ls in s]
-        r_ppm2 = [ls.price_local / ls.area_m2 for ls in r]
-
-        # Check if district level is sufficient
-        if len(s) >= min_sale_sample and len(r) >= min_rent_sample:
-            level = "district"
-            conf = "high" if len(s) >= 40 else "medium"
-        else:
-            # Fallback to city + rooms
-            city_rooms_key = (country, None, city, rooms)
-            s = sale_by_group.get(city_rooms_key, [])
-            r = rent_by_group.get(city_rooms_key, [])
-            s_ppm2 = [ls.price_local / ls.area_m2 for ls in s]
-            r_ppm2 = [ls.price_local / ls.area_m2 for ls in r]
-
-            if len(s) >= min_sale_sample and len(r) >= min_rent_sample:
-                level = "city_rooms"
-                conf = "medium"
-            else:
-                # Fallback to city only
-                city_key = (country, None, city, None)
-                s = sale_by_group.get(city_key, [])
-                r = rent_by_group.get(city_key, [])
-                s_ppm2 = [ls.price_local / ls.area_m2 for ls in s]
-                r_ppm2 = [ls.price_local / ls.area_m2 for ls in r]
-                level = "city"
-                conf = "low"
-
+    for (level, key), sales in index.sale.items():
+        rents = index.rent.get((level, key), [])
+        if len(sales) < min_sale_sample or len(rents) < min_rent_sample:
+            continue
+        country, city, district, rooms = key
         results.append(GroupStats(
             country=country,
             city=city,
-            district=district if level == "district" else None,
-            rooms_bucket=rooms if rooms else "all",
+            district=district,
+            rooms_bucket=rooms or "all",
             group_level=level,
-            confidence=conf,
-            sale_listings=s,
-            rent_listings=r,
-            sale_price_per_m2=s_ppm2,
-            rent_per_m2=r_ppm2,
+            confidence=_confidence(level, len(sales)),
+            sale_listings=sales,
+            rent_listings=rents,
+            sale_price_per_m2=[ls.price_local / ls.area_m2 for ls in sales],
+            rent_per_m2=[ls.price_local / ls.area_m2 for ls in rents],
         ))
-
+    results.sort(key=lambda g: (g.country, g.city, LEVELS.index(g.group_level), g.district or "", g.rooms_bucket))
     return results
 
 
-def _group_listings(
+def gate_coverage(
     listings: list[Listing],
-) -> dict[tuple, list[Listing]]:
-    groups: dict[tuple, list[Listing]] = {}
-
+    min_sale_sample: int = 15,
+    min_rent_sample: int = 10,
+) -> dict[str, dict]:
+    """§13 gate (binding): per city, share of scored sale listings with saleGroupLevel == district."""
+    index = index_groups(listings)
+    result: dict[str, dict] = {}
     for ls in listings:
-        rooms_bucket = _rooms_bucket(ls.rooms)
-
-        # District level (only if rooms known)
-        if ls.district and rooms_bucket:
-            key = (ls.country, ls.district, ls.city, rooms_bucket)
-            groups.setdefault(key, []).append(ls)
-
-        # City + rooms level
-        if rooms_bucket:
-            key = (ls.country, None, ls.city, rooms_bucket)
-            groups.setdefault(key, []).append(ls)
-
-        # City level (all rooms)
-        key = (ls.country, None, ls.city, None)
-        groups.setdefault(key, []).append(ls)
-
-    return groups
+        if ls.transaction != "sale":
+            continue
+        comp = resolve_comparables(ls, index, min_sale_sample, min_rent_sample)
+        if comp is None:
+            continue
+        c = result.setdefault(ls.city, {"scoredListings": 0, "districtLevel": 0})
+        c["scoredListings"] += 1
+        c["districtLevel"] += comp.sale_level == "district"
+    for c in result.values():
+        c["districtLevelPct"] = round(c["districtLevel"] / c["scoredListings"] * 100, 1)
+    return result
 
 
 def _rooms_bucket(rooms: int | None) -> str | None:
@@ -124,7 +161,7 @@ def district_group_coverage(
     min_sale: int = 15,
     min_rent: int = 10,
 ) -> dict[str, dict]:
-    """Per city: share of observed district x roomsBucket groups meeting both sample thresholds."""
+    """§13 gate (informational): share of observed district x rooms groups meeting both thresholds."""
     counts: dict[str, dict[tuple[str, str], dict[str, int]]] = {}
     for ls in listings:
         rb = _rooms_bucket(ls.rooms)

@@ -17,7 +17,7 @@ from src.clean import clean_listings
 from src.config import CITIES
 from src.http import HttpClient
 from src.sources.otodom import OtodomSource, parse_otodom_items
-from src.stats import district_group_coverage
+from src.stats import district_group_coverage, gate_coverage
 
 DOMAIN = "www.otodom.pl"
 
@@ -68,6 +68,7 @@ async def measure_city(
         except Exception as e:
             result["sides"][tx] = {"error": str(e), "time_s": round(time.monotonic() - t0, 1)}
 
+    result["gate"] = gate_coverage(all_cleaned).get(cfg.display_name)
     result["coverage"] = district_group_coverage(all_cleaned).get(cfg.display_name)
     return result
 
@@ -106,10 +107,15 @@ async def main() -> None:
                   f"{s['cleaned']:>6} {s['blocked_pct']:>6.1f}% {s['bytes'] / 1e6:>7.1f} {s['time_s']:>6.1f}s")
             print(f"{'':>17} parse rejections: {s['rejected_parse']}")
             print(f"{'':>17} clean rejections: {s['rejected_clean']}")
+        gate = r["gate"] or {}
         cov = r["coverage"] or {}
+        city_time = sum(s.get("time_s", 0) for s in r["sides"].values())
         print(f"{'':>17} city: {city_bytes / 1e6:.1f} MB* -> ${city_bytes / 1e9 * args.gb_price:.2f} "
-              f"at ${args.gb_price}/GB; district x rooms coverage "
-              f"{cov.get('fullGroups')}/{cov.get('groups')} = {cov.get('coveragePct')}%")
+              f"at ${args.gb_price}/GB, {city_time:.0f}s")
+        print(f"{'':>17} gate (binding): {gate.get('districtLevel')}/{gate.get('scoredListings')} scored sales "
+              f"at district level = {gate.get('districtLevelPct')}%")
+        print(f"{'':>17} groups (info):  {cov.get('fullGroups')}/{cov.get('groups')} district x rooms "
+              f"with both thresholds = {cov.get('coveragePct')}%")
     print("=" * 104)
     print("* decompressed response bytes; proxy traffic (compressed) is lower, so cost is an upper bound")
 

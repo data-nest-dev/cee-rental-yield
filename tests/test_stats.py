@@ -5,9 +5,13 @@ from datetime import date
 
 from src.models import Listing
 from src.stats import (
+    compute_groups,
     deal_score,
     discount_vs_median_pct,
     district_group_coverage,
+    gate_coverage,
+    index_groups,
+    resolve_comparables,
     gross_yield_pct,
     gross_yield_range,
     median_val,
@@ -125,3 +129,88 @@ class TestDistrictGroupCoverage:
     def test_skips_listings_without_district_or_rooms(self) -> None:
         ls = [_cov_listing("sale", None, 2, 1), _cov_listing("rent", "A", None, 2)]
         assert district_group_coverage(ls) == {}
+
+
+def _many(spec: list[tuple[str, int, str | None, int | None]]) -> list[Listing]:
+    out, i = [], 0
+    for tx, n, district, rooms in spec:
+        for _ in range(n):
+            i += 1
+            out.append(_cov_listing(tx, district, rooms, i))
+    return out
+
+
+class TestIndependentFallback:
+    def test_sale_and_rent_resolve_to_different_levels(self) -> None:
+        # A/2: 20 sales but 3 rents; B/2 adds 10 rents -> city x 2 rooms has 13 rents
+        ls = _many([("sale", 20, "A", 2), ("rent", 3, "A", 2), ("rent", 10, "B", 2)])
+        comp = resolve_comparables(ls[0], index_groups(ls))
+        assert comp.sale_level == "district"
+        assert len(comp.sale_listings) == 20
+        assert comp.rent_level == "city_rooms"
+        assert len(comp.rent_listings) == 13
+        assert comp.confidence == "medium"  # worse of the two levels
+
+    def test_rent_count_does_not_affect_sale_level(self) -> None:
+        ls = _many([("sale", 15, "A", 2)])
+        comp = resolve_comparables(ls[0], index_groups(ls))
+        assert comp.sale_level == "district"
+        assert comp.rent_level is None
+        assert comp.rent_listings == []
+        assert comp.confidence == "low"
+
+    def test_confidence_high_needs_40_sales_at_district(self) -> None:
+        ls39 = _many([("sale", 39, "A", 2), ("rent", 10, "A", 2)])
+        ls40 = _many([("sale", 40, "A", 2), ("rent", 10, "A", 2)])
+        assert resolve_comparables(ls39[0], index_groups(ls39)).confidence == "medium"
+        assert resolve_comparables(ls40[0], index_groups(ls40)).confidence == "high"
+
+    def test_sale_falls_back_to_city_rooms_then_city(self) -> None:
+        # A/3 has 4 sales; 3-room total in city = 16 -> city_rooms
+        ls = _many([("sale", 4, "A", 3), ("sale", 12, "B", 3), ("sale", 5, "C", 2)])
+        assert resolve_comparables(ls[0], index_groups(ls)).sale_level == "city_rooms"
+        # 2-room listings: city x 2 has 5 -> city level (21 sales)
+        assert resolve_comparables(ls[-1], index_groups(ls)).sale_level == "city"
+
+    def test_unknown_rooms_only_city_level(self) -> None:
+        ls = _many([("sale", 15, "A", None)])
+        assert resolve_comparables(ls[0], index_groups(ls)).sale_level == "city"
+
+    def test_not_scoreable_without_enough_sales_anywhere(self) -> None:
+        ls = _many([("sale", 14, "A", 2), ("rent", 50, "A", 2)])
+        assert resolve_comparables(ls[0], index_groups(ls)) is None
+
+
+class TestComputeGroups:
+    def test_area_yield_requires_both_thresholds_at_same_level(self) -> None:
+        ls = _many([("sale", 20, "A", 2), ("rent", 3, "A", 2), ("rent", 10, "B", 2)])
+        groups = compute_groups(ls)
+        assert [(g.group_level, g.district, g.rooms_bucket) for g in groups] == [
+            ("city_rooms", None, "2"),
+            ("city", None, "all"),
+        ]
+        assert [g.confidence for g in groups] == ["medium", "low"]
+        assert (len(groups[0].sale_listings), len(groups[0].rent_listings)) == (20, 13)
+
+    def test_district_group_emitted_when_both_thresholds_met(self) -> None:
+        ls = _many([("sale", 40, "A", 2), ("rent", 10, "A", 2)])
+        district = [g for g in compute_groups(ls) if g.group_level == "district"]
+        assert len(district) == 1
+        assert district[0].district == "A"
+        assert district[0].confidence == "high"
+
+
+class TestGateCoverage:
+    def test_share_of_scored_sales_at_district_level(self) -> None:
+        ls = _many([
+            ("sale", 20, "A", 2),    # district
+            ("sale", 16, "C", 3),    # district
+            ("sale", 4, "D", 3),     # city_rooms (3 rooms: 20 in city)
+            ("sale", 1, "A", None),  # city
+        ])
+        cov = gate_coverage(ls)["Katowice"]
+        assert cov == {"scoredListings": 41, "districtLevel": 36, "districtLevelPct": 87.8}
+
+    def test_unscoreable_sales_are_excluded(self) -> None:
+        ls = _many([("sale", 10, "A", 2), ("rent", 30, "A", 2)])
+        assert gate_coverage(ls) == {}
