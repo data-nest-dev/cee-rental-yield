@@ -20,7 +20,18 @@ Repo: `https://github.com/data-nest-dev/cee-rental-yield` · Właściciel: datan
 7. **Weryfikacja ręczna M2 zaliczona** (2026-11-18): właściciel sprawdził 20 ofert z `storage/m2_review_sample.csv` w przeglądarce — cena, metraż, pokoje i dzielnica się zgadzają.
 8. **Proxy (konto właściciela):** datacenter — tylko grupa `BUYPROXIES94952` (5 adresów IP z USA, w cenie planu); residential — dostępne, $8/GB + transfer, z wyborem kraju (PL); dostęp do proxy spoza Actorów wyłączony, więc **lokalne testy idą bez proxy**. Strategia M3: pierwszy test na platformie z datacenter (rotacja sesji między 5 IP); **blokady > 5% → zatrzymaj się i zgłoś**; residential PL dopiero po decyzji właściciela. Kod obsługuje oba warianty przez `proxyConfiguration` z inputu; klucz kraju z inputu to `apifyProxyCountry` (potwierdzone w źródle SDK 4.3.0, §10).
 9. **Model opłat:** przy pay-per-event koszty platformy (compute, proxy, transfer) płaci autor, nie klient — każdy koszt w M3 licz z tego punktu widzenia (zysk = 0,8 × przychód − koszty platformy, §15).
-10. **Tryb budżetowy (2026-11-18):** dane pobieramy w całości przed fazą push, więc przy bardzo niskim limicie kosztu autor płaciłby pełny compute za grosze przychodu. Na starcie odczytaj limit (`ACTOR_MAX_TOTAL_CHARGE_USD` przez `Actor.get_charging_manager().get_max_total_charge_usd()`; bez limitu SDK zwraca `Decimal('inf')`; poza PPE `get_pricing_info().is_pay_per_event == False` → bez redukcji). Jeśli `0,8 × limit < szacowany koszt autora × 1,5` → tylko pierwsze miasto, `samplingMode = "city"`, `maxListingsPerSide = 360` (zakres jak prefill), `mode` → `both` (darmowe rekordy kontekstu miasta = niepusty dataset). Nigdy błąd z powodu niskiego budżetu: Succeeded i niepusty dataset. Stałe modelu kosztu w jednym miejscu: `src/budget.py` (źródło każdej stałej w komentarzu; cena CU = założenie do kalibracji w teście H). Progi (512 MB, datacenter): domyślne uruchomienie ≈ $0,029, prefill ≈ $0,0053; z residential PL ≈ $1,69. README zaleca minimum $0,05 (residential: $2).
+10. **Tryb budżetowy (2026-11-18):** dane pobieramy w całości przed fazą push, więc przy bardzo niskim limicie kosztu autor płaciłby pełny compute za grosze przychodu. Na starcie odczytaj limit (`ACTOR_MAX_TOTAL_CHARGE_USD` przez `Actor.get_charging_manager().get_max_total_charge_usd()`; bez limitu SDK zwraca `Decimal('inf')`; poza PPE `get_pricing_info().is_pay_per_event == False` → bez redukcji). Jeśli `0,8 × limit < szacowany koszt autora × 1,5` → tylko pierwsze miasto, `samplingMode = "city"`, `maxListingsPerSide = 360` (zakres jak prefill); **`mode` bez zmian** (korekta 2026-11-19: użytkownik nigdy nie płaci za typ zdarzenia, o który nie prosił; przy `scoreListings` tryb budżetowy dodaje do datasetu tylko darmowe rekordy `low`, nigdy `area-yield`). Nigdy błąd z powodu niskiego budżetu: Succeeded i niepusty dataset. Stałe modelu kosztu w jednym miejscu: `src/budget.py` (źródło każdej stałej w komentarzu; cena CU = założenie do kalibracji w teście H). Progi (512 MB, datacenter): domyślne uruchomienie ≈ $0,029, prefill ≈ $0,0053; z residential PL ≈ $1,69. README zaleca minimum $0,05 (residential: $2).
+
+11. **Decyzje 2026-11-19 (po briefie M3 v2):**
+    1. `maxScoredListings` (integer ≥ 0, domyślnie 1000, 0 = wszystkie; „Return at most this many listings, best deals first. 0 = all.”): limit po wszystkich filtrach i po sortowaniu po `dealScore`. Przykład ceny domyślnego uruchomienia (Warszawa + Kraków): 109 grup × $0,02 + 1000 × $0,004 ≈ **$6,18**.
+    2. Bez „charges nothing”: przy porażce nasze zdarzenia nie są naliczane, Apify pobiera tylko opłatę startową $0,00005 (`apify-actor-start`).
+    3. W monitoringu grupy (`areaYield`) zależą od `mode`; README zaleca `scoreListings` dla harmonogramów.
+    4. (J9) Gdy jedna strona rynku miasta zawiedzie (blokada / błąd), całe miasto jest pomijane z powodem w `RUN_SUMMARY`; pozostałe miasta idą dalej. *(Zapisane przez Claude Code jako przyjęcie propozycji z briefu — właściciel nie podał innej treści; do potwierdzenia.)*
+    5. (J10) `rooms` jako enum tekstowy `["1","2","3","4+"]` (edytor multi-select); API przyjmuje też liczby 1–4. *(J.w., do potwierdzenia.)*
+    6. Akceptacja: prefill ≠ default, cichy run monitoringu = Succeeded, brak `flatten` w widokach w M3 (wraca w M4).
+    7. `USD_PER_COMPUTE_UNIT` zostaje $0,40 do testu H (cennik Apify podaje dziś $0,20/CU dla Free/Starter; kalibracja z rachunku).
+12. **Raporty i limit (poprawki 2026-11-19):** przed push tylko wstępny `RUN_SUMMARY` (liczniki, bez wartości yield i cen); `YIELD_REPORT` po każdej wypchniętej partii, wyłącznie z wypchniętymi grupami (w `scoreListings`: tylko darmowe `low`); handler `ABORTING` zapisuje to, co wypchnięto. Pojemność budżetu liczona tak, by suma opłat była **ściśle poniżej** limitu: dokumentacja PPE: „Once it's reached, `Actor.charge()` stop charging and `Actor.pushData()` stops pushing data over the limit. The platform then aborts the run automatically.” — nigdy nie dochodzimy do limitu, więc run kończy się normalnie (Succeeded). Darmowe rekordy idą przed płatnymi. `RUN_SUMMARY`: `scoredAvailable`, `scoredReturned`, `prefillRun`.
+13. **Tożsamość git:** repo nie ma `user.email`; commity M1–M2 (24 na `main`, już wypchnięte) mają tożsamość maszyny `<previous machine identity, redacted>`. Gałąź `m3` przepisana lokalnie na `data-nest-dev <contact@datanest.dev>` przed pushem (2026-11-19). Naprawa `main` wymagałaby force push — decyzja właściciela. Claude Code ustawia tożsamość zmiennymi środowiskowymi przy każdym commicie (nie zmienia konfiguracji git).
 
 **Po stronie właściciela (nie Claude Code):**
 - zaakceptować brief M3 (albo odesłać poprawki),
@@ -198,7 +209,7 @@ Weryfikacja: w odpowiedzi `pageProps.tracking.listing.selected_locations_id` mus
 
 **Pola, które musisz usunąć natychmiast po wczytaniu** (dane osobowe / treść): `advertOwner` (całe), `organisationAssignedMember` (całe), `agency` (całe; nazwy agencji JDG to imiona i nazwiska), `images`, `title`, `shortDescription`, `location.address` (ulica), `relatedAds` (zagnieżdżone pełne ogłoszenia lokali z własnymi danymi ogłoszeniodawcy i ulicą).
 
-**Rynek pierwotny/wtórny:** `isPrimaryMarket = developmentId > 0` (przyjęte w M1). **[DO WERYFIKACJI]** na 10 ofertach z `developmentId > 0` i 10 z `0`, czy to się zgadza z oznaczeniem rynku na stronie oferty (sprawdzenie ręczne w przeglądarce, nie przez Actora).
+**Rynek pierwotny/wtórny — reguła `developmentId > 0` OBALONA (2026-11-19).** Filtr wyników `market=PRIMARY|SECONDARY` (parametr z `pageProps.filteringQueryParams.market`, domyślnie `ALL`; Otodom go echo-potwierdza). Warszawa, sprzedaż, strona 1 (LATEST/72): PRIMARY `totalItems` 12 707, SECONDARY 7 598 (suma ≈ 20 274 bez filtra); `developmentId > 0` u **0 z 70** ofert pierwotnych i 0 z 72 wtórnych. `developmentId` oznacza tylko lokale powiązane z kafelkiem inwestycji. Żadne pole oferty nie rozróżnia rynków (te same klucze; jedyna słaba wskazówka: `source = urn:partner:informacja-deweloperska` tylko w pierwotnym, 12/70). Propozycja (czeka na decyzję, nie wdrożona): (a) `includePrimaryMarket: false` → filtr portalu `market=SECONDARY` (dokładny, bez dodatkowych zapytań); (b) `isPrimaryMarket`: `true` gdy `developmentId > 0`, inaczej `null` (nieznane), zamiast fałszywego `false`; (c) opcjonalnie dokładne oznaczanie przez osobne pobieranie PRIMARY i SECONDARY z kwotami proporcjonalnymi do `totalItems` (+≈2 zapytania na miasto i stronę). Uwaga: rynek pierwotny to ≈ 63% bieżącej podaży sprzedaży w Warszawie.
 
 **Kafelki `INVESTMENT`** (dawne `not_flat`): projekty deweloperskie, nie oferty — `totalPrice`, `areaInSquareMeters`, `roomsNumber` = `null`; mają `priceFromPerSquareMeter`, `investmentUnitsNumber`, zakresy metrażu i pokoi, `investmentState`, `investmentEstimatedDelivery`, `developmentId = 0`, oraz `relatedAds` (2–3 pełne ogłoszenia lokali z `developmentId == id kafelka`). Odrzucane z powodem `primary_market_project`, liczone w `RUN_SUMMARY.primaryMarketProjects`. `relatedAds` są usuwane przy parsowaniu (dane osobowe, niereprezentatywne) — wymień to w README „Limitations”. **Duplikaty:** strony całego miasta (DEFAULT) serwują te same kafelki wielokrotnie (Katowice: 178 kafelków, 36 unikalnych) — deduplikacja po `slug` musi poprzedzać liczenie (poprawione 2026-11-18). Unikalne projekty w pomiarze per dzielnica (sprzedaż): Katowice 44, Warszawa 148, Kraków 136, Wrocław 52; mediana lokali na projekt 30–50.
 
@@ -360,13 +371,14 @@ Domyślne uruchomienie bez ustawień ma dać sensowny wynik w kilka minut (Warsz
 |---|---|---|---|
 | `cities` | array (enum) | `["warszawa","krakow"]` | `warszawa, krakow, wroclaw, katowice` (Czechy w 1.1, §6.2a) |
 | `mode` | string enum | `both` | `yieldReport` (tylko grupy), `scoreListings` (tylko oferty), `both` |
-| `rooms` | array int | `[1,2,3,4]` | 4 = 4 i więcej |
+| `rooms` | array (enum tekstowy, multi-select) | `["1","2","3","4+"]` | `"4+"` = 4 i więcej; API przyjmuje też liczby 1–4 (§0 decyzja 11.5) |
 | `areaMin` / `areaMax` | integer | 15 / 250 | m² |
 | `samplingMode` | enum | `perDistrict` | `perDistrict` (kwota najnowszych ofert na dzielnicę) albo `city` (najnowsze N ofert miasta) |
 | `maxListingsPerSide` | integer | 1500 | tryb `city`: limit ofert sprzedaży i osobno najmu na miasto |
 | `maxListingsPerDistrict` | integer ≥ 0 | `0` | tryb `perDistrict`: limit na dzielnicę i stronę rynku; `0` = automatycznie `max(150, ceil(1500 / liczba_dzielnic))`; `maxListingsPerSide` jest wtedy ignorowany (opisz to w polu) |
 | `minScore` | integer 0–100 | 0 | zwraca tylko oferty z oceną ≥ |
-| `includePrimaryMarket` | boolean | true | czy liczyć rynek pierwotny |
+| `maxScoredListings` | integer ≥ 0 | 1000 | „Return at most this many listings, best deals first. 0 = all.” Limit po filtrach i sortowaniu; odcięte oferty w monitoringu nie są oznaczane jako widziane (§0 decyzja 11.1) |
+| `includePrimaryMarket` | boolean | true | czy liczyć rynek pierwotny; dziś filtr po `developmentId > 0`, który jest niewiarygodny (§6.1) — propozycja: filtr portalu `market=SECONDARY` |
 | `minSaleSample` / `minRentSample` | integer | 15 / 10 | próg grupy przed fallbackiem |
 | `onlyNewOrChanged` | boolean | false | monitoring: tylko nowe oferty i obniżki |
 | `stateKey` | string | `default` | nazwa pamięci monitoringu |
@@ -413,7 +425,7 @@ Jeden dataset, typ rekordu w polu `recordType`. Nazwy pól camelCase. Przykład 
 ```
 `changeType ∈ {"new", "priceCut", "unchanged"}` (w trybie bez monitoringu: `null`).
 
-**`RUN_SUMMARY`** (key-value store, klucz `RUN_SUMMARY`): per miasto i strona rynku: liczba stron, ofert surowych, ofert po czyszczeniu, odrzucenia z powodami, zapytania zablokowane/błędne (kody), `buildIdRefreshes`, `fallbackToHtml`, czas; per miasto: odsetek grup z pełną próbą; kurs EBC; porównanie naszej mediany najmu za m² z `faqDynamicData.avgPricePerM` (Otodom). To jest też wynik pomiaru „weekend 1”.
+**`RUN_SUMMARY`** (key-value store, klucz `RUN_SUMMARY`; pola M3: `status`, `budgetReduced`, `maxChargeUsd`, `estimatedAuthorCostUsd`, `minMaxChargeUsd`, `chargeLimitReached`, `scoredAvailable`, `scoredReturned`, `prefillRun`, `events`, `records`, `totals`, `monitoring`; per strona rynku także `sample`, `primaryMarketProjects`, `proxySessions`): per miasto i strona rynku: liczba stron, ofert surowych, ofert po czyszczeniu, odrzucenia z powodami, zapytania zablokowane/błędne (kody), `buildIdRefreshes`, `fallbackToHtml`, czas; per miasto: odsetek grup z pełną próbą; kurs EBC; porównanie naszej mediany najmu za m² z `faqDynamicData.avgPricePerM` (Otodom). To jest też wynik pomiaru „weekend 1”.
 
 **`.actor/dataset_schema.json`:** dwa widoki tabeli: „Rental yield by district” (pola `areaYield`) i „Scored listings” (pola `scoredListing`, sortowanie po `dealScore`). Format widoków: sprawdź `https://docs.apify.com/platform/actors/development/actor-definition/dataset-schema`. Widoki nie filtrują po `recordType` — puste kolumny drugiego typu są akceptowalne; w trybie `both` dodatkowo zapisz pełny raport grup do key-value store pod `YIELD_REPORT`.
 
@@ -500,6 +512,7 @@ curl -s https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml > tests/fi
 - Pusty wynik / blokada / błąd = zero zdarzeń.
 - Lokalnie (bez platformy) naliczanie ma być no-op bez wyjątków. (SDK 4.3.0: poza modelem pay-per-event `Actor.charge` loguje jedno ostrzeżenie i zwraca `charged_count=0`.)
 - **Tryb budżetowy** przy zbyt niskim limicie kosztu (§0 decyzja 10, `src/budget.py`); pola `RUN_SUMMARY`: `budgetReduced`, `maxChargeUsd`, `estimatedAuthorCostUsd` (oraz `requestedScopeCostUsd`, `minMaxChargeUsd`).
+- **Limit kosztu:** pojemność ściśle poniżej limitu (`affordable_count` w `src/charging.py`), bo platforma przerywa run, gdy opłaty osiągną limit (§0 decyzja 12). Sprawdzone testem integracyjnym z prawdziwym SDK (`tests/test_integration_sdk.py`, ceny z `APIFY_ACTOR_PRICING_INFO`).
 - **Zdarzenie syntetyczne `apify-default-dataset-item`** jest domyślnie włączone i nalicza się za każdy rekord w domyślnym datasecie — usuń je w Console. Kod i tak liczy pojemność budżetu z pełnej ceny rekordu (zdarzenie + syntetyczne), bo SDK przy braku budżetu przepuszcza 1 rekord ponad limit, a platforma wtedy przerywa uruchomienie (sprawdzone w lokalnym trybie testowym PPE 2026-11-18).
 - **Codzienny test Apify** (https://docs.apify.com/platform/actors/publishing/test): uruchamia Actora z wartościami `prefill`, oczekuje statusu Succeeded i niepustego datasetu w ciągu 5 minut; kto płaci za test i czy test ustawia max charge — dokumentacja nie mówi. Prefill = zakres trybu budżetowego.
 - **Koszty platformy płaci autor** (§0 decyzja 9): Apify potrąca je z wypłaty; zysk = 0,8 × przychód − koszty platformy (compute, proxy, transfer). Dlatego każdy koszt w M3 liczymy z perspektywy autora.
@@ -556,7 +569,7 @@ Dodatkowo w Apify: trzy „examples” (zapisane zadania z gotowym wejściem): �
 - [x] ręczna weryfikacja 20 ofert (PL) — zaliczona przez właściciela (cena, metraż, pokoje, dzielnica)
 
 **M3 — Actor (weekend 3)** — plan w briefie M3, czeka na akceptację
-- [ ] `main.py` (orkiestracja) i pełny `RUN_SUMMARY` (przeniesione z M2)
+- [x] `main.py` (orkiestracja) i pełny `RUN_SUMMARY` (przeniesione z M2) — gałąź `m3`, test H jeszcze nie
 - [ ] `input_schema.json`, `dataset_schema.json`, `actor.json`, `Dockerfile`
 - [ ] naliczanie zdarzeń + limit kosztu + $0 przy porażce
 - [ ] monitoring (`monitor.py`) z testem
@@ -585,7 +598,11 @@ Rozstrzygnięte też (2026-11-18, późno): wynik bramki po LATEST/72 (§13), kl
 
 Rozstrzygnięte też (2026-11-18, wieczór): domyślne próbkowanie (per dzielnica, kwota automatyczna), 1.0 tylko Polska (Czechy w 1.1 przez `reality.idnes.cz`, `bezrealitky.cz` odpada), weryfikacja ręczna M2 zaliczona, strategia proxy w M3, perspektywa kosztów (płaci autor).
 
+Rozstrzygnięte też (2026-11-19): `developmentId > 0` nie oznacza rynku pierwotnego (§6.1); decyzje 11.1–11.7 i 12 w §0.
+
 Otwarte:
-1. Czy `developmentId > 0` zgadza się z rynkiem pierwotnym — CSV weryfikacji M2 nie miał tej kolumny; do sprawdzenia przy kolejnej próbce.
+1. Reguła rynku pierwotnego: propozycja (a)/(b)/(c) w §6.1 — decyzja właściciela.
+1a. Decyzje 4 i 5 z 2026-11-19 (J9, J10) zapisane jako przyjęcie propozycji — do potwierdzenia.
+1b. Tożsamość 24 wypchniętych commitów na `main` (§0 decyzja 13) — naprawa tylko przez force push.
 2. Blokady i czas zapytania na platformie Apify z datacenter (5 IP z USA), potem ewentualnie residential PL (M3) — wpływa na „domyślne uruchomienie < 5 min”.
 3. Pytania z briefu M3 (sekcja „Ryzyka i otwarte pytania”).
