@@ -283,3 +283,17 @@ async def test_html_fallback_returns_to_json_when_build_id_changes() -> None:
     assert stats["html_pages"] == 1
     assert stats["fallback_recoveries"] == 1
     assert any("/_next/data/NEW/" in c and "page=3&" in c for c in http.calls)
+
+
+@pytest.mark.asyncio
+async def test_zero_quota_means_automatic_quota() -> None:
+    # 2 districts -> max(150, ceil(1500 / 2)) = 750 per district
+    http = FakeHttp({
+        f"https://www.otodom.pl/pl/wyniki/sprzedaz/mieszkanie/{CITY}": [
+            (200, _html("B1", [_item("a1", "bogucice")], 1, districts=["bogucice", "dab"])),
+        ],
+        _district_page("bogucice", 1): [(200, _json([_item("a2", "bogucice")], 1))],
+        _district_page("dab", 1): [(200, _json([_item("d1", "dab")], 1))],
+    })
+    _, stats = await OtodomSource(http).fetch_listings("katowice", "sale", 1500, max_per_district=0)
+    assert stats["quota_per_district"] == 750

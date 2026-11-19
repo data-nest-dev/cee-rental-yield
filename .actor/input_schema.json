@@ -7,7 +7,7 @@
         "cities": {
             "title": "Cities",
             "type": "array",
-            "description": "Cities to analyse. Each city samples apartments for sale and for long-term rent.",
+            "description": "Cities to analyse. Each city samples apartments for sale and for long-term rent. Katowice is available; its rental market is small, so many groups fall back to city level.",
             "editor": "select",
             "items": {
                 "type": "string",
@@ -15,7 +15,140 @@
                 "enumTitles": ["Warsaw", "Kraków", "Wrocław", "Katowice"]
             },
             "minItems": 1,
-            "default": ["warszawa", "krakow"]
+            "default": ["warszawa", "krakow"],
+            "prefill": ["warszawa"]
+        },
+        "mode": {
+            "title": "What to return",
+            "type": "string",
+            "description": "yieldReport: gross rental yield per district and room count. scoreListings: a 0–100 deal score for every listing for sale. both: both record types.",
+            "editor": "select",
+            "enum": ["both", "yieldReport", "scoreListings"],
+            "enumTitles": ["Yield report and scored listings", "Yield report only", "Scored listings only"],
+            "default": "both"
+        },
+        "rooms": {
+            "title": "Rooms",
+            "type": "array",
+            "description": "Room counts to include in the results. \"4+\" means four or more rooms.",
+            "editor": "select",
+            "items": {
+                "type": "string",
+                "enum": ["1", "2", "3", "4+"],
+                "enumTitles": ["1 room", "2 rooms", "3 rooms", "4 or more rooms"]
+            },
+            "minItems": 1,
+            "default": ["1", "2", "3", "4+"]
+        },
+        "areaMin": {
+            "title": "Minimum area",
+            "type": "integer",
+            "description": "Smallest flat size to include.",
+            "unit": "m²",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 15
+        },
+        "areaMax": {
+            "title": "Maximum area",
+            "type": "integer",
+            "description": "Largest flat size to include.",
+            "unit": "m²",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 250
+        },
+        "minScore": {
+            "title": "Minimum deal score",
+            "type": "integer",
+            "description": "Return only listings with a deal score at or above this value (50 = priced at the median of comparable flats).",
+            "minimum": 0,
+            "maximum": 100,
+            "default": 0
+        },
+        "includePrimaryMarket": {
+            "title": "Include new builds",
+            "type": "boolean",
+            "description": "Include new-build listings from developers.",
+            "default": true
+        },
+        "samplingMode": {
+            "sectionCaption": "Sampling",
+            "sectionDescription": "How many listings to sample. Listings are always sampled newest first.",
+            "title": "Sampling mode",
+            "type": "string",
+            "description": "perDistrict: the newest listings of every district, for district-level comparisons. city: the newest listings of the whole city; faster, but recent listings only.",
+            "editor": "select",
+            "enum": ["perDistrict", "city"],
+            "enumTitles": ["Per district (recommended)", "Whole city"],
+            "default": "perDistrict",
+            "prefill": "city"
+        },
+        "maxListingsPerDistrict": {
+            "title": "Listings per district",
+            "type": "integer",
+            "description": "Per-district mode: listings per district and market side. 0 = automatic: 150, or more in cities with few districts (max(150, 1500 ÷ districts)). Ignored in whole-city mode.",
+            "minimum": 0,
+            "maximum": 10000,
+            "default": 0
+        },
+        "maxListingsPerSide": {
+            "title": "Listings per city and side",
+            "type": "integer",
+            "description": "Whole-city mode: listings for sale and, separately, for rent per city. Ignored in per-district mode.",
+            "minimum": 1,
+            "maximum": 20000,
+            "default": 1500,
+            "prefill": 360
+        },
+        "minSaleSample": {
+            "title": "Minimum sale listings per group",
+            "type": "integer",
+            "description": "Fewer listings for sale than this in a district and room group: the group falls back to the city level.",
+            "minimum": 1,
+            "maximum": 10000,
+            "default": 15
+        },
+        "minRentSample": {
+            "title": "Minimum rent listings per group",
+            "type": "integer",
+            "description": "Fewer listings for rent than this in a district and room group: the rent estimate falls back to the city level.",
+            "minimum": 1,
+            "maximum": 10000,
+            "default": 10
+        },
+        "onlyNewOrChanged": {
+            "sectionCaption": "Monitoring",
+            "sectionDescription": "Run on a schedule and get only what changed.",
+            "title": "Only new or cheaper listings",
+            "type": "boolean",
+            "description": "Return only listings that are new or at least 1% cheaper since the last run with the same state key.",
+            "default": false
+        },
+        "stateKey": {
+            "title": "State key",
+            "type": "string",
+            "description": "Name of the monitoring memory. Use a different key for each watchlist; letters, digits, '.', '_' and '-'.",
+            "editor": "textfield",
+            "default": "default"
+        },
+        "outputCurrency": {
+            "title": "Sort currency",
+            "type": "string",
+            "description": "Currency used to break ties when sorting listings by deal score. Prices are always returned in EUR and in local currency.",
+            "editor": "select",
+            "enum": ["EUR", "local"],
+            "enumTitles": ["EUR", "Local currency (PLN)"],
+            "default": "EUR"
+        },
+        "proxyConfiguration": {
+            "sectionCaption": "Proxy",
+            "title": "Proxy configuration",
+            "type": "object",
+            "description": "Proxy used to reach the listing portal. For Polish residential IPs choose the RESIDENTIAL group and country Poland.",
+            "editor": "proxy",
+            "default": { "useApifyProxy": true, "apifyProxyGroups": ["BUYPROXIES94952"] },
+            "prefill": { "useApifyProxy": true, "apifyProxyGroups": ["BUYPROXIES94952"] }
         }
     }
 }

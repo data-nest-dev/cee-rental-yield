@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 
@@ -49,3 +50,12 @@ CITIES: dict[str, CityConfig] = {
 }
 
 OTODOM_TRANSACTION_MAP = {"sale": "sprzedaz", "rent": "wynajem"}
+
+# Per-district quota per market side when maxListingsPerDistrict = 0 (owner decision 2026-11-18,
+# CLAUDE.md §0 decision 5): at least 150, more in cities with few districts (Wrocław: 5 -> 300).
+AUTO_QUOTA_MIN = 150
+AUTO_QUOTA_CITY_TARGET = 1500
+
+
+def auto_district_quota(n_districts: int) -> int:
+    return max(AUTO_QUOTA_MIN, math.ceil(AUTO_QUOTA_CITY_TARGET / max(n_districts, 1)))

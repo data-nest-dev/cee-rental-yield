@@ -5,7 +5,7 @@ import logging
 import re
 from datetime import date, datetime
 
-from src.config import CITIES, OTODOM_TRANSACTION_MAP, CityConfig
+from src.config import CITIES, OTODOM_TRANSACTION_MAP, CityConfig, auto_district_quota
 from src.http import HttpClient
 from src.models import Listing
 
@@ -118,6 +118,9 @@ class OtodomSource:
             stats["district_source"] = "discovery"
         stats["districts"] = len(districts)
         stats["district_pages"] = 0
+        if max_per_district == 0:
+            max_per_district = auto_district_quota(len(districts))
+        stats["quota_per_district"] = max_per_district
 
         for district in districts:
             page_num = 1
