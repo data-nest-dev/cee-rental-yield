@@ -93,11 +93,13 @@ A `scoredListing` record (example values):
 - **Sample sizes are shown.** Every group carries its listing counts and a confidence level; thin groups fall back to the city level instead of producing noisy numbers.
 - **Cleaning is explicit.** Ads, duplicates, hidden prices, implausible sizes and price outliers are removed and counted in `RUN_SUMMARY`.
 - **No personal data.** Names, phone numbers, agency names, photos, descriptions and addresses are dropped when a listing is read; results contain our numbers and a link.
-- **Loud failures.** A blocked or empty run fails with a clear message and charges nothing for results.
+- **Loud failures.** A blocked or empty run fails with a clear message. None of the Actor's result events are charged; Apify charges only its standard start fee of $0.00005.
 
 ## Monitoring
 
 Set `onlyNewOrChanged: true` and schedule the Actor (for example daily). Each run returns only listings that are new, or at least 1% cheaper, since the last run with the same `stateKey`, marked `changeType: "new"` or `"priceCut"` with `priceCutPct`. Use one schedule per state key. Unchanged listings are neither returned nor charged.
+
+For schedules we recommend `mode: "scoreListings"`: yield groups follow `mode` in monitoring runs too, so with `both` every scheduled run also returns (and charges) the full set of yield groups. Run a separate yield report when you need one. A run that finds nothing new still succeeds.
 
 ## Pricing
 
@@ -110,11 +112,11 @@ Pay per result:
 
 City-level context records (low confidence) are free.
 
-Example from a test run (November 2026): Warsaw and Kraków with default settings returned about 109 yield groups and 6,150 scored listings, about **$26.80** in total. Kraków alone: about 49 yield groups ($0.98) and 2,970 scored listings ($11.90).
+By default a run returns at most 1,000 scored listings, best deals first (`maxScoredListings`; 0 = all). Example from a test run (November 2026): Warsaw and Kraków with default settings return about 109 yield groups ($2.18) and 1,000 scored listings ($4.00), about **$6.18** in total. Kraków alone: about 49 yield groups ($0.98) and 1,000 scored listings ($4.00), about $4.98. With `maxScoredListings: 0` the default run scores all of its about 6,150 listings (about $26.80 in total).
 
-To spend less: `mode: "yieldReport"` returns only the yield groups (about $2 for Warsaw and Kraków); `minScore` and `rooms` reduce the number of scored listings; and you can set a maximum charge per run. When that maximum is reached the run stops cleanly after delivering the yield groups and the best-scored listings first.
+To spend less: `mode: "yieldReport"` returns only the yield groups (about $2 for Warsaw and Kraków); `maxScoredListings`, `minScore` and `rooms` reduce the number of scored listings; and you can set a maximum charge per run. When that maximum is close, the run stops cleanly, staying below it, after delivering free city-level context, the yield groups and the best-scored listings first.
 
-**Very low maximum charge.** The Actor collects the whole sample before it returns any result. If your maximum charge per run is too low to justify that (below about $0.03 with default settings), the run uses a smaller sample instead: the first city in your list, the 360 newest listings for sale and for rent, whole-city comparison. The run still succeeds and returns what your limit covers, and `RUN_SUMMARY` shows `budgetReduced: true`. **Recommended minimum for the default run: $0.05** (with the residential proxy: $2).
+**Very low maximum charge.** The Actor collects the whole sample before it returns any result. If your maximum charge per run is too low to justify that (below about $0.03 with default settings), the run uses a smaller sample instead: the first city in your list, the 360 newest listings for sale and for rent, whole-city comparison. The run still succeeds and returns free city-level context plus what your limit covers (for example 2 scored listings at $0.01), never an event type you did not ask for, and `RUN_SUMMARY` shows `budgetReduced: true`. **Recommended minimum for the default run: $0.05** (with the residential proxy: $2).
 
 ## Limitations
 
