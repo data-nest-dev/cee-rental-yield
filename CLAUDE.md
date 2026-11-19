@@ -33,6 +33,15 @@ Repo: `https://github.com/data-nest-dev/cee-rental-yield` · Właściciel: datan
 12. **Raporty i limit (poprawki 2026-11-19):** przed push tylko wstępny `RUN_SUMMARY` (liczniki, bez wartości yield i cen); `YIELD_REPORT` po każdej wypchniętej partii, wyłącznie z wypchniętymi grupami (w `scoreListings`: tylko darmowe `low`); handler `ABORTING` zapisuje to, co wypchnięto. Pojemność budżetu liczona tak, by suma opłat była **ściśle poniżej** limitu: dokumentacja PPE: „Once it's reached, `Actor.charge()` stop charging and `Actor.pushData()` stops pushing data over the limit. The platform then aborts the run automatically.” — nigdy nie dochodzimy do limitu, więc run kończy się normalnie (Succeeded). Darmowe rekordy idą przed płatnymi. `RUN_SUMMARY`: `scoredAvailable`, `scoredReturned`, `prefillRun`.
 13. **Tożsamość git (załatwione 2026-11-19):** lokalny `git config` repo: `data-nest-dev <contact@datanest.dev>`. Autor i committer wszystkich commitów `main` i `m3` przepisani na tę tożsamość (`git filter-repo`), `main` i `m3` wypchnięte `--force-with-lease`; w historii nie ma imienia, nazwiska ani nazwy hosta (jedyne wystąpienie, linia tego punktu w CLAUDE.md, zastąpiono przy przepisywaniu). Lokalne kopie: `main-backup-identity`, `m3-backup-identity`, `m3-backup-identity-v2` — nie wypychać. Stare commity PR #1 zostają w `refs/pull/1/head` i w gałęzi `origin/latest-72` (decyzja właściciela: bez działania).
 
+14. **Decyzje 2026-11-19 po Run 1 testu H (domyślny input na platformie, datacenter: 2/215 blokad, 267 s, 134 MB):**
+    1. Kwota próbkowania bez zmian: `max(150, ceil(1500 / liczba_dzielnic))`. Warunek czasu domyślnego runu: **< 8 min** (codzienny test Apify używa prefillu). Pomiar kwoty 120 (lokalnie): 160 zapytań, bramka 96,6% / 93,0% — odrzucone.
+    2. `src/budget.py`: `SECONDS_PER_REQUEST = 1.19` (Run 1). `FIXED_SECONDS`, zapytania na dzielnicę i `BYTES_PER_REQUEST` bez zmian do ≥ 3 runów (przeszacowanie jest bezpieczne); pamięć i `USD_PER_COMPUTE_UNIT` po Run 2 i Usage.
+    3. Dedupe najmu po (dzielnica, pokoje, metraż, cena, piętro, typ ogłoszeniodawcy; brak pola = pusta wartość): `rejected.near_duplicate_rent`. Dla sprzedaży tylko licznik `nearDuplicateSale` (bez usuwania).
+    4. Sortowanie wyniku: `dealScore` malejąco, potem `discountVsMedianPct` malejąco.
+    5. `scoredListing.flags` (lista): `share`, `auction` — oferta wykluczona z median i z wyniku (liczniki `rejected.share_listing`, `rejected.auction_listing`); `needsRenovation` — zostaje w wyniku i medianie, z flagą; `outlier` (rabat > 40%, ≥ 2 pokoje na < 20 m², cena/m² < 0,6 mediany) — tylko flaga. `title` służy wyłącznie do klasyfikacji w pamięci (`src/flags.py`), nigdy do wyniku ani logów. Słownik słów kluczowych wstępny; poprawki po przeglądzie top 15 przez właściciela.
+    6. Brief M3 nie jest już prowadzony jako artifact: decyzje w CLAUDE.md, raporty w czacie.
+    7. Test limitu kosztu na platformie niepotrzebny: pokrywa go lokalny test integracyjny (`tests/test_integration_sdk.py`, decyzja z 2026-11-18).
+
 **Po stronie właściciela (nie Claude Code):**
 - zaakceptować brief M3 (albo odesłać poprawki),
 - podpiąć repo w Apify jako prywatny Actor (Source type: Git repository) — kroki w briefie M3,
@@ -365,7 +374,7 @@ Gdy `MAD == 0` → `score = 50` dla ceny równej medianie, inaczej 0 lub 100 zal
 
 ## 10. Wejście (`.actor/input_schema.json`)
 
-Domyślne uruchomienie bez ustawień ma dać sensowny wynik w kilka minut (Warszawa + Kraków, < 5 min). Wszystkie `title`/`description` po angielsku.
+Domyślne uruchomienie bez ustawień ma dać sensowny wynik w kilka minut (Warszawa + Kraków, < 8 min; zmiana 2026-11-19, patrz §0 decyzja 14). Wszystkie `title`/`description` po angielsku.
 
 | Pole | Typ | Domyślnie | Opis |
 |---|---|---|---|
@@ -574,7 +583,7 @@ Dodatkowo w Apify: trzy „examples” (zapisane zadania z gotowym wejściem): �
 - [ ] naliczanie zdarzeń + limit kosztu + $0 przy porażce
 - [ ] monitoring (`monitor.py`) z testem
 - [ ] README (§16), trzy przykłady
-- [ ] test na prywatnym Actorze w Apify: domyślne uruchomienie < 5 min, koszt pełnej oceny miasta < 25% przychodu z uruchomienia
+- [ ] test na prywatnym Actorze w Apify: domyślne uruchomienie < 8 min, koszt pełnej oceny miasta < 25% przychodu z uruchomienia
 - [ ] **ponowny pomiar blokad na platformie Apify z proxy** (M1 mierzył z domowego IP bez proxy) — najpierw datacenter `BUYPROXIES94952`; > 5% blokad → stop i raport; kryterium 1 bramki obowiązuje dla środowiska produkcyjnego
 
 **M4 — publikacja (weekend 4)**
@@ -604,5 +613,5 @@ Rozstrzygnięte też (2026-11-19, później): rynek pierwotny (a)+(b), J9/J10 po
 
 Otwarte:
 1. (c) dokładne oznaczanie rynku — po teście H, tylko jeśli mieszanie rynków zaburza mediany (§6.1).
-2. Blokady i czas zapytania na platformie Apify z datacenter (5 IP z USA), potem ewentualnie residential PL (M3) — wpływa na „domyślne uruchomienie < 5 min”. Test H w toku.
+2. Blokady i czas zapytania na platformie Apify z datacenter (5 IP z USA), potem ewentualnie residential PL (M3) — wpływa na „domyślne uruchomienie < 8 min”. Test H w toku.
 3. Pytania z briefu M3 (sekcja „Ryzyka i otwarte pytania”).
