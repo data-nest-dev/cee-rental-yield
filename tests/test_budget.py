@@ -20,15 +20,15 @@ def test_request_estimates() -> None:
 
 def test_default_and_prefill_thresholds_on_datacenter_proxy() -> None:
     # default: (30 + 240 * 1.05) s at 512 MB = 0.0392 CU x $0.40 = $0.0157; threshold x 1.5 / 0.8
-    assert estimate_author_cost_usd(DEFAULT, 512) == pytest.approx(0.01567, abs=1e-4)
-    assert min_max_charge_usd(DEFAULT, 512) == pytest.approx(0.0294, abs=1e-3)
+    assert estimate_author_cost_usd(DEFAULT, 512) == pytest.approx(0.01753, abs=1e-4)
+    assert min_max_charge_usd(DEFAULT, 512) == pytest.approx(0.03287, abs=1e-3)
     assert min_max_charge_usd(PREFILL, 512) == pytest.approx(0.0053, abs=5e-4)
 
 
 def test_residential_proxy_adds_traffic_cost() -> None:
     res = parse_input({"proxyConfiguration": RESIDENTIAL})
     # 240 requests x 0.46 MB x $8/GB = $0.883 on top of compute
-    assert estimate_author_cost_usd(res, 512) == pytest.approx(0.01567 + 0.8832, abs=1e-3)
+    assert estimate_author_cost_usd(res, 512) == pytest.approx(0.01753 + 0.8832, abs=1e-3)
     assert min_max_charge_usd(res, 512) == pytest.approx(1.685, abs=0.01)
 
 

@@ -7,7 +7,7 @@ from src.inputs import RunInput
 
 # Author's platform cost model (under pay-per-event the author pays compute, proxy and transfer).
 # Measured 2026-11-18, LATEST/72, home IP, no proxy (CLAUDE.md §6.1 "Pomiar decyzyjny"):
-SECONDS_PER_REQUEST = 1.05             # Warszawa + Kraków per-district default: 214 requests in ~220 s
+SECONDS_PER_REQUEST = 1.19             # test H run 1 (platform, datacenter): 255 s of fetch time / 215 requests
 FIXED_SECONDS = 30                     # start, ECB rate, stats and push; estimate, calibrate in test H
 REQUESTS_PER_SIDE_PER_DISTRICT = 60    # per-district automatic quota: 25-80 per side measured, mean 48
 CITY_MODE_REQUEST_FACTOR = 1.7         # whole-city mode: ceil(1.7 * listings / 72) + 1 per side (measured 21-35 at 1500)
