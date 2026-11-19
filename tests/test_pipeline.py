@@ -359,3 +359,30 @@ async def test_budget_mode_c_sufficient_limit_is_not_reduced() -> None:
     assert summary["budgetReduced"] is False
     assert summary["minMaxChargeUsd"] < 50.0
     assert len(source.calls) == 4
+
+
+@pytest.mark.asyncio
+async def test_max_scored_listings_keeps_the_best_deals_after_filters() -> None:
+    actor_all, _, all_summary = await _run({"cities": ["katowice"], "mode": "scoreListings", "maxScoredListings": 0})
+    best = [r["url"] for r in actor_all.records("scoredListing")]
+    actor, _, summary = await _run({"cities": ["katowice"], "mode": "scoreListings", "maxScoredListings": 3})
+    assert [r["url"] for r in actor.records("scoredListing")] == best[:3]
+    assert summary["scoredAvailable"] == len(best) == all_summary["scoredReturned"]
+    assert summary["scoredReturned"] == 3
+    assert summary["events"]["scored-listing"]["chargeable"] == 3
+
+
+@pytest.mark.asyncio
+async def test_listings_cut_by_max_scored_are_not_marked_seen() -> None:
+    actor = FakeActor()
+    _, _, first = await _run({**MONITOR, "maxScoredListings": 2}, actor=actor)
+    assert first["scoredReturned"] == 2 and len(actor.state["watch-1"]) == 2
+    assert first["monitoring"]["heldBack"] == first["scoredAvailable"] - 2
+
+
+@pytest.mark.asyncio
+async def test_prefill_run_flag() -> None:
+    from src.inputs import PREFILL_INPUT
+    _, _, prefill = await _run(dict(PREFILL_INPUT, cities=["warszawa"]))
+    _, _, default = await _run({"cities": ["katowice"]})
+    assert prefill["prefillRun"] is True and default["prefillRun"] is False

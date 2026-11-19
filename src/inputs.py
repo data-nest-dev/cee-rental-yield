@@ -12,6 +12,13 @@ OUTPUT_CURRENCIES = ("EUR", "local")
 STATE_KEY_RE = re.compile(r"^[A-Za-z0-9_.-]{1,100}$")
 
 DEFAULT_PROXY = {"useApifyProxy": True, "apifyProxyGroups": ["BUYPROXIES94952"]}
+# Same values as `prefill` in .actor/input_schema.json (Apify's daily test input); a test keeps them in sync.
+PREFILL_INPUT = {
+    "cities": ["warszawa"],
+    "samplingMode": "city",
+    "maxListingsPerSide": 360,
+    "proxyConfiguration": DEFAULT_PROXY,
+}
 
 
 class InputError(ValueError):
@@ -29,6 +36,7 @@ class RunInput:
     max_listings_per_district: int = 0  # 0 = automatic, see config.auto_district_quota
     max_listings_per_side: int = 1500
     min_score: int = 0
+    max_scored_listings: int = 1000  # 0 = all
     include_primary_market: bool = True
     min_sale_sample: int = 15
     min_rent_sample: int = 10
@@ -83,6 +91,7 @@ def parse_input(raw: dict | None) -> RunInput:
         max_listings_per_district=_int(raw, "maxListingsPerDistrict", d.max_listings_per_district, 0, 10000),
         max_listings_per_side=_int(raw, "maxListingsPerSide", d.max_listings_per_side, 1, 20000),
         min_score=_int(raw, "minScore", d.min_score, 0, 100),
+        max_scored_listings=_int(raw, "maxScoredListings", d.max_scored_listings, 0, 1_000_000),
         include_primary_market=_bool(raw, "includePrimaryMarket", d.include_primary_market),
         min_sale_sample=_int(raw, "minSaleSample", d.min_sale_sample, 1, 10000),
         min_rent_sample=_int(raw, "minRentSample", d.min_rent_sample, 1, 10000),
@@ -98,6 +107,10 @@ def parse_input(raw: dict | None) -> RunInput:
     if result.proxy_configuration is not None and not isinstance(result.proxy_configuration, dict):
         raise InputError("Input 'proxyConfiguration' must be an object.")
     return result
+
+
+def is_prefill_run(run_input: RunInput) -> bool:
+    return run_input == parse_input(PREFILL_INPUT)
 
 
 def _enum(raw: dict, key: str, default: str, allowed: tuple[str, ...]) -> str:

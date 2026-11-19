@@ -11,20 +11,43 @@
             "editor": "select",
             "items": {
                 "type": "string",
-                "enum": ["warszawa", "krakow", "wroclaw", "katowice"],
-                "enumTitles": ["Warsaw", "Kraków", "Wrocław", "Katowice"]
+                "enum": [
+                    "warszawa",
+                    "krakow",
+                    "wroclaw",
+                    "katowice"
+                ],
+                "enumTitles": [
+                    "Warsaw",
+                    "Kraków",
+                    "Wrocław",
+                    "Katowice"
+                ]
             },
             "minItems": 1,
-            "default": ["warszawa", "krakow"],
-            "prefill": ["warszawa"]
+            "default": [
+                "warszawa",
+                "krakow"
+            ],
+            "prefill": [
+                "warszawa"
+            ]
         },
         "mode": {
             "title": "What to return",
             "type": "string",
             "description": "yieldReport: gross rental yield per district and room count. scoreListings: a 0–100 deal score for every listing for sale. both: both record types.",
             "editor": "select",
-            "enum": ["both", "yieldReport", "scoreListings"],
-            "enumTitles": ["Yield report and scored listings", "Yield report only", "Scored listings only"],
+            "enum": [
+                "both",
+                "yieldReport",
+                "scoreListings"
+            ],
+            "enumTitles": [
+                "Yield report and scored listings",
+                "Yield report only",
+                "Scored listings only"
+            ],
             "default": "both"
         },
         "rooms": {
@@ -34,11 +57,26 @@
             "editor": "select",
             "items": {
                 "type": "string",
-                "enum": ["1", "2", "3", "4+"],
-                "enumTitles": ["1 room", "2 rooms", "3 rooms", "4 or more rooms"]
+                "enum": [
+                    "1",
+                    "2",
+                    "3",
+                    "4+"
+                ],
+                "enumTitles": [
+                    "1 room",
+                    "2 rooms",
+                    "3 rooms",
+                    "4 or more rooms"
+                ]
             },
             "minItems": 1,
-            "default": ["1", "2", "3", "4+"]
+            "default": [
+                "1",
+                "2",
+                "3",
+                "4+"
+            ]
         },
         "areaMin": {
             "title": "Minimum area",
@@ -66,6 +104,14 @@
             "maximum": 100,
             "default": 0
         },
+        "maxScoredListings": {
+            "title": "Maximum scored listings",
+            "type": "integer",
+            "description": "Return at most this many listings, best deals first. 0 = all.",
+            "minimum": 0,
+            "maximum": 1000000,
+            "default": 1000
+        },
         "includePrimaryMarket": {
             "title": "Include new builds",
             "type": "boolean",
@@ -79,8 +125,14 @@
             "type": "string",
             "description": "perDistrict: the newest listings of every district, for district-level comparisons. city: the newest listings of the whole city; faster, but recent listings only.",
             "editor": "select",
-            "enum": ["perDistrict", "city"],
-            "enumTitles": ["Per district (recommended)", "Whole city"],
+            "enum": [
+                "perDistrict",
+                "city"
+            ],
+            "enumTitles": [
+                "Per district (recommended)",
+                "Whole city"
+            ],
             "default": "perDistrict",
             "prefill": "city"
         },
@@ -137,8 +189,14 @@
             "type": "string",
             "description": "Currency used to break ties when sorting listings by deal score. Prices are always returned in EUR and in local currency.",
             "editor": "select",
-            "enum": ["EUR", "local"],
-            "enumTitles": ["EUR", "Local currency (PLN)"],
+            "enum": [
+                "EUR",
+                "local"
+            ],
+            "enumTitles": [
+                "EUR",
+                "Local currency (PLN)"
+            ],
             "default": "EUR"
         },
         "proxyConfiguration": {
@@ -147,8 +205,18 @@
             "type": "object",
             "description": "Proxy used to reach the listing portal. For Polish residential IPs choose the RESIDENTIAL group and country Poland.",
             "editor": "proxy",
-            "default": { "useApifyProxy": true, "apifyProxyGroups": ["BUYPROXIES94952"] },
-            "prefill": { "useApifyProxy": true, "apifyProxyGroups": ["BUYPROXIES94952"] }
+            "default": {
+                "useApifyProxy": true,
+                "apifyProxyGroups": [
+                    "BUYPROXIES94952"
+                ]
+            },
+            "prefill": {
+                "useApifyProxy": true,
+                "apifyProxyGroups": [
+                    "BUYPROXIES94952"
+                ]
+            }
         }
     }
 }

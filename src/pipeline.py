@@ -15,7 +15,7 @@ from src.clean import clean_listings
 from src.config import CITIES
 from src.fx import parse_ecb_rates
 from src.http import BlockedError, HttpClient
-from src.inputs import ROOM_BUCKETS, InputError, RunInput, parse_input
+from src.inputs import ROOM_BUCKETS, InputError, RunInput, is_prefill_run, parse_input
 from src.models import Listing
 from src.monitor import compute_changes, update_state
 from src.output import build_area_yield, build_scored_listing, build_side_summary
@@ -277,8 +277,10 @@ async def _run(
     rates_loader: Callable[[HttpClient], Awaitable[tuple[dict[str, float], str]]],
     as_of: date,
 ) -> dict:
+    summary["prefillRun"] = is_prefill_run(run_input)
     summary["input"] = {
         "cities": run_input.cities, "mode": run_input.mode, "samplingMode": run_input.sampling_mode,
+        "maxScoredListings": run_input.max_scored_listings,
         "maxListingsPerDistrict": run_input.max_listings_per_district,
         "maxListingsPerSide": run_input.max_listings_per_side,
     }
@@ -327,6 +329,12 @@ async def _run(
             await actor.status("No new or cheaper listings since the last run.")
             return summary
 
+    # maxScoredListings applies after every filter and after sorting, so the cap keeps the best deals.
+    scored_available = len(scored)
+    if run_input.max_scored_listings:
+        scored = scored[:run_input.max_scored_listings]
+    summary["scoredAvailable"] = scored_available
+
     if not area_records and not scored:
         reasons = "; ".join(f"{k}: {v['reason'] or 'no results'}" for k, v in summary["cities"].items())
         summary.update(status="failed", reason=f"No results ({reasons})")
@@ -357,13 +365,14 @@ async def _run(
         observed = scored[:pushed_scored] + unchanged
         new_state = update_state(state, _price_map(observed), as_of)
         await actor.save_state(run_input.state_key, new_state)
-        summary["monitoring"].update(heldBack=len(scored) - pushed_scored, savedListings=len(new_state))
+        summary["monitoring"].update(heldBack=scored_available - pushed_scored, savedListings=len(new_state))
 
     failed = [k for k, v in summary["cities"].items() if v["status"] != "ok"]
     summary.update(
         status="partial" if failed or limit_reached else "ok",
         chargeLimitReached=limit_reached,
         records={"areaYield": pushed_free + pushed_area, "scoredListing": pushed_scored},
+        scoredReturned=pushed_scored,
         events={
             AREA_YIELD_EVENT: {"chargeable": len(charged_area), "pushed": pushed_area,
                                "charged": actor.charged_count(AREA_YIELD_EVENT)},
