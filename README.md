@@ -131,6 +131,7 @@ To spend less: `mode: "yieldReport"` returns only the yield groups (about $2 for
 - **The sample is current supply.** Listings are sampled newest first, so long-unsold stock is under-represented. Every yield record reports the sample's median age, oldest listing and share of all listings.
 - **Developer projects are counted, not scored.** Project tiles have no single price or area, and the few example units shown inside a tile are not representative; both are left out. Project counts appear in `RUN_SUMMARY`.
 - **Primary and secondary market are mixed by default.** With the default setting, price comparisons include both new builds from developers and resales, and `isPrimaryMarket` is `true` when the portal links the flat to a development and `null` (unknown) otherwise. Set `includePrimaryMarket` to `false` to request resales only; every record then has `isPrimaryMarket: false`.
+- **Wrong portal locations can slip through.** The portal takes the location from the advertiser. A flat filed under the wrong city is dropped when its listing text or address names another city; if the real city is named nowhere, it can end up in the results.
 - **Flags are keyword-based.** Share, auction and renovation flags rely on words in the listing title, so listings that do not say it are not flagged.
 - **No information about the flat's condition.** A cheap listing may need renovation.
 - **Katowice has a small rental market** (about 770 rentals city-wide), so many of its groups fall back to the city level.

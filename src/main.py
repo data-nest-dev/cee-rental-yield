@@ -4,6 +4,7 @@ import logging
 from decimal import Decimal
 
 from apify import Actor, Event
+from crawlee._log_config import configure_logger
 
 from src.charging import DEFAULT_DATASET_ITEM_EVENT, affordable_count, push_with_charging
 from src.http import HttpClient
@@ -104,8 +105,18 @@ async def make_http(run_input: RunInput) -> HttpClient:
     return HttpClient(proxy_url_for=proxy_url_for)
 
 
+def configure_app_logging() -> None:
+    """Give our modules the Actor log handler and level.
+
+    The SDK configures only the `apify` and `apify_client` loggers, so INFO lines from `src.*` would
+    be dropped (root level WARNING) on the platform.
+    """
+    configure_logger(logging.getLogger("src"), remove_old_handlers=True)
+
+
 async def main() -> None:
     async with Actor:
+        configure_app_logging()
         port = ApifyActorPort()
 
         async def on_aborting(*_args: object) -> None:
