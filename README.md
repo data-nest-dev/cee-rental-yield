@@ -75,9 +75,16 @@ A `scoredListing` record (example values):
   "dealScore": 87, "discountVsMedianPct": 20.06,
   "estimatedRentMonthlyEur": 830, "grossYieldPct": 7.19,
   "saleGroupLevel": "district", "rentGroupLevel": "district", "confidence": "high",
-  "daysOnMarket": 38, "changeType": null, "priceCutPct": null
+  "daysOnMarket": 38, "flags": [], "changeType": null, "priceCutPct": null
 }
 ```
+
+`flags` lists reasons to look at a listing twice:
+
+- `needsRenovation` – the listing says the flat needs renovation. It stays in the results and in the medians, so a cheap price may reflect the condition.
+- `outlier` – priced more than 40% below its group's median, or a 2+ room flat under 20 m². Often a data quirk or a special case; check the listing before trusting the score.
+
+Listings that are a share of a flat (`share`) or a court auction (`auction`) are not comparable to ordinary flats. They are left out of the medians and of the results, and counted in `RUN_SUMMARY` (`share_listing`, `auction_listing`). Flags come from keywords in the listing title; the title itself is never stored or returned. Repeated posts of the same rental (same district, rooms, area, price, floor and advertiser type) count once (`near_duplicate_rent` in `RUN_SUMMARY`). Results are sorted by deal score, then by discount against the median.
 
 ## How the numbers are computed
 
@@ -124,6 +131,7 @@ To spend less: `mode: "yieldReport"` returns only the yield groups (about $2 for
 - **The sample is current supply.** Listings are sampled newest first, so long-unsold stock is under-represented. Every yield record reports the sample's median age, oldest listing and share of all listings.
 - **Developer projects are counted, not scored.** Project tiles have no single price or area, and the few example units shown inside a tile are not representative; both are left out. Project counts appear in `RUN_SUMMARY`.
 - **Primary and secondary market are mixed by default.** With the default setting, price comparisons include both new builds from developers and resales, and `isPrimaryMarket` is `true` when the portal links the flat to a development and `null` (unknown) otherwise. Set `includePrimaryMarket` to `false` to request resales only; every record then has `isPrimaryMarket: false`.
+- **Flags are keyword-based.** Share, auction and renovation flags rely on words in the listing title, so listings that do not say it are not flagged.
 - **No information about the flat's condition.** A cheap listing may need renovation.
 - **Katowice has a small rental market** (about 770 rentals city-wide), so many of its groups fall back to the city level.
 - **Poland only for now.** More countries are planned.

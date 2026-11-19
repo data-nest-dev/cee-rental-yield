@@ -39,7 +39,7 @@
                     "dealScore", "url", "city", "district", "rooms", "areaM2", "price", "pricePerM2Eur",
                     "groupMedianPricePerM2Eur", "discountVsMedianPct", "estimatedRentMonthlyEur", "grossYieldPct",
                     "saleGroupLevel", "rentGroupLevel", "confidence", "isPrimaryMarket", "daysOnMarket",
-                    "changeType", "priceCutPct", "recordType"
+                    "flags", "changeType", "priceCutPct", "recordType"
                 ]
             },
             "display": {
@@ -62,6 +62,7 @@
                     "confidence": { "label": "Confidence", "format": "text" },
                     "isPrimaryMarket": { "label": "New build (if known)", "format": "boolean" },
                     "daysOnMarket": { "label": "Days on market", "format": "number" },
+                    "flags": { "label": "Flags", "format": "array" },
                     "changeType": { "label": "Change", "format": "text" },
                     "priceCutPct": { "label": "Price cut %", "format": "number" },
                     "recordType": { "label": "Record type", "format": "text" }

@@ -23,6 +23,7 @@ class Listing:
     is_primary_market: bool | None
     advertiser_type: str | None
     first_published: date | None
+    flags: tuple[str, ...] = ()  # atypical-listing flags derived from the title, which is never stored
 
 
 @dataclass

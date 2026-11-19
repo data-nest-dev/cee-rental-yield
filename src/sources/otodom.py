@@ -5,6 +5,7 @@ import logging
 import re
 from datetime import date, datetime
 
+from src.flags import FLAG_AUCTION, FLAG_NEEDS_RENOVATION, FLAG_SHARE, classify_title
 from src.config import (
     CITIES,
     MARKET_ALL,
@@ -392,6 +393,8 @@ def parse_otodom_items(
     seen_slugs: set[str] = set()
 
     for raw in raw_items:
+        # The title is used only to classify the listing in memory; it is removed right below.
+        title_flags = classify_title(raw.get("title"))
         # Strip PII immediately
         # relatedAds: unit ads nested in INVESTMENT tiles, each with its own owner and address
         for pii_key in ("advertOwner", "organisationAssignedMember", "agency",
@@ -422,6 +425,14 @@ def parse_otodom_items(
             continue
         if raw.get("estate") != "FLAT":
             reject("not_flat")
+            continue
+
+        # Shares and auctions are not comparable to ordinary flats: excluded from medians and results
+        if FLAG_SHARE in title_flags:
+            reject("share_listing")
+            continue
+        if FLAG_AUCTION in title_flags:
+            reject("auction_listing")
             continue
 
         # Price
@@ -519,6 +530,7 @@ def parse_otodom_items(
             is_primary_market=is_primary,
             advertiser_type=adv_type,
             first_published=first_pub,
+            flags=(FLAG_NEEDS_RENOVATION,) if FLAG_NEEDS_RENOVATION in title_flags else (),
         )
         listings.append(listing)
 
