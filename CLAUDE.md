@@ -6,59 +6,26 @@ Repo: `https://github.com/data-nest-dev/cee-rental-yield` · Właściciel: datan
 
 ---
 
-## 0. Stan na 2026-11-18, noc (po „Tasks 1–9 Review Brief”, lokalnie `03c4e43`, nic nie wypchnięte) — czytaj najpierw
+## 0. Stan na 2026-11-18, wieczór (po PR #1, `main` = `7f9db93`) — czytaj najpierw
+
+**M1 i M2 ukończone.** Teraz: **plan M3 (brief) czeka na akceptację właściciela — nie zaczynaj kodowania M3 przed akceptacją.**
 
 **Decyzje właściciela (obowiązują):**
 1. **Zero ryzyka prawnego i wizerunkowego.** Źródło wchodzi do Actora tylko, jeśli `robots.txt` pozwala na używane ścieżki dla `User-agent: *`. Wątpliwości = nie wchodzi. Sreality wyłączone.
 2. **Nazwa produktu:** „Rental Yield & Deal Score” (bez krajów).
-3. **Bramka, kryterium 3:** ≥ 70% ofert sprzedaży porównanych na poziomie dzielnicy (`saleGroupLevel == "district"`). **Mianownik = wszystkie oczyszczone oferty sprzedaży miasta**, także te, których nie da się ocenić (liczą się jako „nie w dzielnicy”). Metryka grup `district × rooms` — tylko informacyjnie.
-4. **Historia git: przepisać przed pierwszym pushem** (commit `5fbd13d` i potomne zawierają w starych wersjach fixtures nazwiska agentów, nazwy agencji i ulice). Szczegóły: zadanie 1.
-5. **Sortowanie i rozmiar strony Otodom: `by=LATEST&direction=DESC` + `limit=72`.** Uzasadnienie z sondy (Warszawa, sprzedaż): stabilna paginacja (100% pokrycia stron po 5 min, 0 duplikatów vs 5 przy DEFAULT), 2× mniej zapytań; DEFAULT sortuje po płatnych podbiciach i gubi oferty. Konsekwencja: próba to **bieżąca podaż** — musimy to jawnie raportować (zadanie 4).
-
-**Ocena briefu „Tasks 1–9”:** zaakceptowane — commity 1a/1b/1c, lista dzielnic z `pageProps.data.searchLinksRelatedLocations`, niezależny fallback sprzedaży i najmu, okno blokad per miasto × strona rynku, testy na 3.12 i w obrazie Apify, `primaryMarketProjects`, strażnik danych osobowych w fixtures. Błąd z ulicami w fixture najmu był po stronie autora tego pliku (przygotowałem ją bez usunięcia `location.address.street`) — dobrze, że został wyłapany.
-
-**Odpowiedzi na „Interpretations” z briefu (§12 briefu):**
-1. *confidence*: brak poziomu najmu → `low` — **zgoda**. `high` liczone z liczby ofert sprzedaży — **zgoda**.
-2. *mianownik bramki*: zmień zgodnie z decyzją 3 (wszystkie oczyszczone oferty sprzedaży).
-3. *zestaw `areaYield`*: wszystkie kwalifikujące się poziomy (district, city_rooms, city) — **zgoda**; opłata tylko za `high`/`medium` zostaje (city = darmowy kontekst).
-4. *`relatedAds`*: w MVP **odrzucane** — to 2–3 przykładowe lokale na inwestycję, niereprezentatywne. Zapisz w README w „Limitations”.
-5. *fixture najmu*: po przepisaniu historii nie ma znaczenia; zostaw obecną wersję.
-6. *jednopolowy input schema*: **zgoda** do M3.
-7. *`apifyProxyCountry`*: sprawdź w źródle SDK (`apify` Python, `create_proxy_configuration(actor_proxy_input=...)`) jakie klucze czyta — nie zgaduj; jeśli kraj nie jest obsługiwany z inputu, ustaw `country_code="PL"` w kodzie dla Otodom.
-
-**Zadania (w tej kolejności):**
-
-1. **Przepisanie historii (przed jakimkolwiek pushem).**
-   - `brew install git-filter-repo`; zrób kopię zapasową katalogu repo.
-   - Usuń z całej historii oba pliki fixtures, potem dodaj ich obecne, zanonimizowane wersje jednym nowym commitem („Add anonymized Otodom fixtures”).
-   - Weryfikacja: `git log --all -p -- tests/fixtures | grep -E '"(street|firstName|lastName)"' ` nie może pokazać prawdziwych wartości; `test_fixtures_pii.py` przechodzi na każdym commicie, gdzie fixtures istnieją (sprawdź co najmniej HEAD i pierwszy commit z fixtures).
-   - `git filter-repo` domyślnie usuwa remote `origin` — dodaj go z powrotem (`git remote add origin <url>`).
-   - Dopiero potem `git push`. Lokalny `main` jest przed `origin/main` (`037a0bc`) tylko o lokalne commity, a `037a0bc` nie zawiera fixtures, więc po przepisaniu powinien zostać przodkiem — zwykły push wystarczy. **Jeśli Git zażąda force push, zatrzymaj się i zapytaj właściciela.**
-2. **Dokończ bieżący pomiar** (task 4, DEFAULT/36) — zostaw go, dane posłużą do porównania; nie przerywaj.
-3. **Wdrożenie decyzji 5:** `by=LATEST&direction=DESC`, `limit=72` jako domyślne w `otodom.py`; parametry konfigurowalne w kodzie (nie w inpucie). Test: URL zawiera oba parametry; parser obsługuje 72 elementy (fixture z 36 wystarczy, test na liczbę z `pagination`).
-4. **Raportowanie wieku próby** (konsekwencja LATEST): w każdym `areaYield` i w `RUN_SUMMARY` per miasto × strona rynku: `sample.medianAgeDays`, `sample.oldestListingDays` (z `createdAtFirst`), `sample.share` = pobrane / `totalItems` miasta lub dzielnicy. Testy na syntetycznych danych.
-5. **Mianownik bramki** wg decyzji 3 w `gate_coverage` + test (oferta nieoceniana obniża procent).
-6. **Pomiar decyzyjny** (po zadaniach 3–5): 4 miasta × LATEST/72 × {per-district 150, per-district 300, city-wide 1500}. Raport: metryka bramki (obowiązująca), metryka informacyjna, wiek próby, MB, zapytania, czas per miasto, `primaryMarketProjects`. **Rekomenduj domyślny tryb i kwotę** spełniające: bramka ≥ 70% w Warszawie, Krakowie, Wrocławiu (Katowice informacyjnie — rynek najmu ograniczony podażą) **oraz** domyślne uruchomienie (`["warszawa","krakow"]`) < 5 min.
-7. **Weryfikacja ręczna (M2):** wygeneruj CSV z 20 losowymi ocenionymi ofertami (po 5 z każdego miasta PL): `url, priceLocal, areaM2, rooms, district, pricePerM2Eur, dealScore`. Właściciel sprawdza je w przeglądarce. Actor nie otwiera stron ofert (§3.1).
-8. **Czeskie źródło (§6.2a):** sprawdź `robots.txt` bezrealitky.cz i reality.idnes.cz (tylko `robots.txt` i jedna strona wyników w przeglądarce do oceny liczby ofert). Raport w PR. Nie pisz parsera przed decyzją właściciela.
-9. **Aktualizacja CLAUDE.md** faktami z briefu: lista dzielnic potwierdzona na żywo (Warszawa 18, Wrocław 5), `limit=100` → cicho 36, zawartość kafelków `INVESTMENT`, liczba testów, §19. Commit razem z edycjami właściciela.
-
-**Potem M3** (osobny brief z planem przed rozpoczęciem): `main.py` (orkiestracja), pełny input schema §10, `dataset_schema.json`, pay-per-event (sprawdź aktualne API SDK), monitoring, `RUN_SUMMARY` w Actorze, README §16, Dockerfile, uruchomienie na prywatnym Actorze w Apify z proxy rezydencjalnym PL (kryterium 1 bramki na produkcji).
-
-**Wykonanie zadań 1–9 (Claude Code, 2026-11-18, gałąź `latest-72`, PR do `main`):**
-1. Historia przepisana i wypchnięta zwykłym pushem (`037a0bc..54b0ab0`, bez force). Przy okazji wyszedł drugi wyciek w „zanonimizowanych” fixtures: `organisationAssignedMember.firstName/lastName/userID/profileID/photoURL` i ulica w tytule — naprawione przed commitem fixtures, strażnik sprawdza te pola. Z historii usunięte też stare fixtures Sreality (identyfikatory agencji). Kopia sprzed przepisania: `~/PycharmProjects/cee-rental-yield-backup-2026-11-18` (zawiera stare dane — usuń po akceptacji).
-2. Pomiar DEFAULT/36 dokończony (porównanie w §6.1).
-3–5. LATEST/72, wiek próby, mianownik bramki — zrobione z testami (96 testów, 3.12).
-6. Rekomendacja w §6.1 „Pomiar decyzyjny”.
-7. CSV: `storage/m2_review_sample.csv` (poza gitem, `storage/` jest w `.gitignore`).
-8. Raport w §6.2a i w PR.
-9. Ten plik.
+3. **Bramka, kryterium 3:** ≥ 70% oczyszczonych ofert sprzedaży porównanych na poziomie dzielnicy (`saleGroupLevel == "district"`); mianownik = wszystkie oczyszczone oferty sprzedaży miasta. Metryka grup `district × rooms` — tylko informacyjnie.
+4. **Otodom: `by=LATEST&direction=DESC` + `limit=72`.** Próba to bieżąca podaż — raportujemy jej wiek i udział (`sample.*`).
+5. **Domyślne próbkowanie (2026-11-18):** `samplingMode = "perDistrict"`, kwota na dzielnicę i stronę rynku `max(150, ceil(1500 / liczba_dzielnic))` — Warszawa, Kraków, Katowice 150, Wrocław 300. W inpucie `maxListingsPerDistrict = 0` = „automatycznie według tej formuły” (§10).
+6. **Wersja 1.0 tylko z Polską:** Warszawa, Kraków, Wrocław; Katowice wybieralne, nie reklamowane. Czeskie źródło w 1.1: `reality.idnes.cz` — **teraz nie piszemy parsera**. `bezrealitky.cz` odpada (`robots.txt` blokuje ścieżkę `search`, której używa wewnętrznie).
+7. **Weryfikacja ręczna M2 zaliczona** (2026-11-18): właściciel sprawdził 20 ofert z `storage/m2_review_sample.csv` w przeglądarce — cena, metraż, pokoje i dzielnica się zgadzają.
+8. **Proxy (konto właściciela):** datacenter — tylko grupa `BUYPROXIES94952` (5 adresów IP z USA, w cenie planu); residential — dostępne, $8/GB + transfer, z wyborem kraju (PL); dostęp do proxy spoza Actorów wyłączony, więc **lokalne testy idą bez proxy**. Strategia M3: pierwszy test na platformie z datacenter (rotacja sesji między 5 IP); **blokady > 5% → zatrzymaj się i zgłoś**; residential PL dopiero po decyzji właściciela. Kod obsługuje oba warianty przez `proxyConfiguration` z inputu; klucz kraju z inputu to `apifyProxyCountry` (potwierdzone w źródle SDK 4.3.0, §10).
+9. **Model opłat:** przy pay-per-event koszty platformy (compute, proxy, transfer) płaci autor, nie klient — każdy koszt w M3 licz z tego punktu widzenia (zysk = 0,8 × przychód − koszty platformy, §15).
 
 **Po stronie właściciela (nie Claude Code):**
-- sprawdzić w Apify Console, czy plan konta daje dostęp do proxy rezydencjalnego (Proxy → Residential), zanim zacznie się M3,
-- podpiąć repo w Apify (Source: Git repository) po pierwszym pushu,
-- przed publikacją (M4): dane do wypłat i ceny zdarzeń w Publication → Monetization,
-- weryfikacja ręczna 20 ofert z zadania 7.
+- zaakceptować brief M3 (albo odesłać poprawki),
+- podpiąć repo w Apify jako prywatny Actor (Source type: Git repository) — kroki w briefie M3,
+- przed publikacją (M4): dane do wypłat i ceny zdarzeń w monetyzacji,
+- usunąć kopię `~/PycharmProjects/cee-rental-yield-backup-2026-11-18` (zawiera dane sprzed przepisania historii).
 
 ## 1. Co budujemy i dla kogo
 
@@ -66,11 +33,11 @@ Repo: `https://github.com/data-nest-dev/cee-rental-yield` · Właściciel: datan
 
 1. **Rentowność brutto najmu** per dzielnica × liczba pokoi (mediany, kwartyle, liczebność próby).
 2. **Ocenę 0–100 każdej oferty sprzedaży** względem mediany ceny za m² jej grupy (dzielnica × pokoje) i szacowaną rentowność tej oferty.
-3. Wszystko **w EUR** (kurs EBC) obok waluty lokalnej (PLN, CZK), żeby miasta z różnych krajów dało się porównać.
+3. Wszystko **w EUR** (kurs EBC) obok waluty lokalnej (PLN; CZK od wersji 1.1), żeby miasta z różnych krajów dało się porównać.
 
 **Odbiorcy:** zagraniczni inwestorzy buy-to-let, proptech i wyceny automatyczne, fundusze najmu, analitycy, agenci AI wołający Actora przez MCP. Dlatego wszystkie teksty dla użytkownika (README, opisy pól, komunikaty błędów, tytuły) są **po angielsku**. Kod, komentarze i commity też po angielsku.
 
-**Dlaczego to ma sens:** dla UK, Francji, DACH i USA takie Actory już istnieją (np. `lowlanddata/rightmove-yield-scanner`, `mocha_tassel/real-estate-deal-score` od $4/1000 ocenionych ofert). Dla Polski i Czech są tylko surowe scrapery albo same mediany ceny za m² (`lowlanddata/otodom-price-stats`). Wyróżniki: dwa kraje naraz, ocena każdej oferty, EUR, uczciwie opisane pułapki danych.
+**Dlaczego to ma sens:** dla UK, Francji, DACH i USA takie Actory już istnieją (np. `lowlanddata/rightmove-yield-scanner`, `mocha_tassel/real-estate-deal-score` od $4/1000 ocenionych ofert). Dla Polski i Czech są tylko surowe scrapery albo same mediany ceny za m² (`lowlanddata/otodom-price-stats`). Wyróżniki: ocena każdej oferty, EUR, uczciwie opisane pułapki danych, kolejne kraje bez zmiany nazwy (1.0 Polska, 1.1 Czechy).
 
 **To jest jeden Actor z wieloma źródłami**, nie osobny Actor na portal. Źródła to moduły w `src/sources/`. Klient podaje miasta, Actor sam wybiera źródło.
 
@@ -80,9 +47,9 @@ Repo: `https://github.com/data-nest-dev/cee-rental-yield` · Właściciel: datan
 
 | Wersja | Kraj | Źródło | Miasta |
 |---|---|---|---|
-| 1.0 | Polska | Otodom | Warszawa, Kraków, Wrocław (+ Katowice jako miasto testowe) |
-| 1.0 lub później | Czechy | do ustalenia (Sreality wyłączone, §6.2a) | Praha, Brno, Ostrava |
-| 1.1 | Włochy | Immobiliare | Milano, Roma, Napoli (NIE w tym etapie) |
+| 1.0 | Polska | Otodom | Warszawa, Kraków, Wrocław (+ Katowice wybieralne, nie reklamowane) |
+| 1.1 | Czechy | `reality.idnes.cz` (decyzja 2026-11-18; parser dopiero w 1.1) | Praha, Brno, Ostrava |
+| później | Włochy | Immobiliare | Milano, Roma, Napoli (NIE w tym etapie; wcześniej planowane jako 1.1) |
 
 **W zakresie 1.0:** mieszkania (flats), sprzedaż + najem długoterminowy, rynek wtórny i pierwotny razem (z flagą `isPrimaryMarket`), rentowność per dzielnica × pokoje, ocena ofert sprzedaży, tryb monitoringu (tylko nowe oferty i obniżki), EUR + waluta lokalna.
 
@@ -259,7 +226,7 @@ Weryfikacja: w odpowiedzi `pageProps.tracking.listing.selected_locations_id` mus
 
 **Domyślne uruchomienie `["warszawa","krakow"]`** (samo pobieranie): całe miasto 90 s, per dzielnica 150 — 220 s, per dzielnica 300 — 405 s (> 5 min ✗).
 
-**Rekomendacja (do decyzji właściciela):** per dzielnica, kwota `max(150, ceil(1500 / liczba_dzielnic))` na stronę rynku — Warszawa/Kraków/Katowice 150, Wrocław 300. Spełnia bramkę w Warszawie, Krakowie, Wrocławiu (98,0 / 96,2 / 100%) i czas domyślnego uruchomienia (~220 s). Całe miasto też przechodzi bramkę w 90 s, ale przy LATEST to próba z ostatniego tygodnia (Warszawa: mediana 2 dni, najstarsza oferta 6 dni, 7% rynku) — ocena porównywałaby nowe oferty tylko z nowymi. Stała kwota 150 jest zła dla Wrocławia (5 dzielnic → 899 ofert sprzedaży, mniej niż całe miasto, najstarsza 9 dni). **Ryzyko czasu:** ~214 zapytań przy 1 req/s to ≥ 214 s; z proxy rezydencjalnym czas zapytania może przekroczyć 1 s — zmierzyć w M3, ewentualnie obniżyć kwotę.
+**Decyzja właściciela (2026-11-18, §0 decyzja 5):** per dzielnica, kwota `max(150, ceil(1500 / liczba_dzielnic))` na stronę rynku — Warszawa/Kraków/Katowice 150, Wrocław 300. Spełnia bramkę w Warszawie, Krakowie, Wrocławiu (98,0 / 96,2 / 100%) i czas domyślnego uruchomienia (~220 s). Całe miasto też przechodzi bramkę w 90 s, ale przy LATEST to próba z ostatniego tygodnia (Warszawa: mediana 2 dni, najstarsza oferta 6 dni, 7% rynku) — ocena porównywałaby nowe oferty tylko z nowymi. Stała kwota 150 jest zła dla Wrocławia (5 dzielnic → 899 ofert sprzedaży, mniej niż całe miasto, najstarsza 9 dni). **Ryzyko czasu:** ~214 zapytań przy 1 req/s to ≥ 214 s; z proxy rezydencjalnym czas zapytania może przekroczyć 1 s — zmierzyć w M3, ewentualnie obniżyć kwotę.
 
 **Pułapki Otodom (każda musi mieć test):**
 
@@ -295,7 +262,7 @@ Kryterium wyboru: `robots.txt` pozwala na ścieżki, których używamy, i liczba
 | Oferty (Praha, sprzedaż) | 617 (`totalCount`) — tylko oferty bez pośredników | 4 751 |
 | Ochrona | brak captchy przy jednym zapytaniu | brak captchy przy jednym zapytaniu |
 
-Rekomendacja: `reality.idnes.cz` jako główny kandydat (wolumen, dozwolone zwykłe strony wyników bez `sort`; parser HTML), `bezrealitky.cz` najwyżej jako uzupełnienie (mały wolumen; publiczne `/vypis` dozwolone, ale wewnętrzna trasa nazywa się `search`, a `/search*` jest zablokowane — w duchu decyzji 1 to wątpliwość). Przed decyzją właściciel: liczby ofert w przeglądarce dla Pragi (najem), Brna i Ostrawy (sprzedaż, najem) oraz regulaminy obu serwisów (`robots.txt` nie zastępuje regulaminu). Parsera nie pisano.
+**Decyzja właściciela (2026-11-18):** wersja 1.0 tylko z Polską; `reality.idnes.cz` = czeskie źródło w 1.1 (parser dopiero w 1.1, nie teraz); `bezrealitky.cz` odpada. Rekomendacja, na której oparta była decyzja: `reality.idnes.cz` jako główny kandydat (wolumen, dozwolone zwykłe strony wyników bez `sort`; parser HTML), `bezrealitky.cz` najwyżej jako uzupełnienie (mały wolumen; publiczne `/vypis` dozwolone, ale wewnętrzna trasa nazywa się `search`, a `/search*` jest zablokowane — w duchu decyzji 1 to wątpliwość). Przed decyzją właściciel: liczby ofert w przeglądarce dla Pragi (najem), Brna i Ostrawy (sprzedaż, najem) oraz regulaminy obu serwisów (`robots.txt` nie zastępuje regulaminu). Parsera nie pisano.
 
 ### 6.3 Kurs walut (EBC)
 
@@ -386,24 +353,24 @@ Gdy `MAD == 0` → `score = 50` dla ceny równej medianie, inaczej 0 lub 100 zal
 
 ## 10. Wejście (`.actor/input_schema.json`)
 
-Domyślne uruchomienie bez ustawień ma dać sensowny wynik w kilka minut (Warszawa + Praha). Wszystkie `title`/`description` po angielsku.
+Domyślne uruchomienie bez ustawień ma dać sensowny wynik w kilka minut (Warszawa + Kraków, < 5 min). Wszystkie `title`/`description` po angielsku.
 
 | Pole | Typ | Domyślnie | Opis |
 |---|---|---|---|
-| `cities` | array (enum) | `["warszawa","krakow"]` | `warszawa, krakow, wroclaw, katowice` (Czechy po wyborze źródła, §6.2a) |
+| `cities` | array (enum) | `["warszawa","krakow"]` | `warszawa, krakow, wroclaw, katowice` (Czechy w 1.1, §6.2a) |
 | `mode` | string enum | `both` | `yieldReport` (tylko grupy), `scoreListings` (tylko oferty), `both` |
 | `rooms` | array int | `[1,2,3,4]` | 4 = 4 i więcej |
 | `areaMin` / `areaMax` | integer | 15 / 250 | m² |
-| `samplingMode` | enum | do decyzji po pomiarze (§0, zadanie 6) | `city` (najnowsze N ofert miasta) albo `perDistrict` (kwota najnowszych ofert na dzielnicę) |
+| `samplingMode` | enum | `perDistrict` | `perDistrict` (kwota najnowszych ofert na dzielnicę) albo `city` (najnowsze N ofert miasta) |
 | `maxListingsPerSide` | integer | 1500 | tryb `city`: limit ofert sprzedaży i osobno najmu na miasto |
-| `maxListingsPerDistrict` | integer | do decyzji po pomiarach | tryb `perDistrict`: limit na dzielnicę i stronę rynku; `maxListingsPerSide` jest wtedy ignorowany (opisz to w polu) |
+| `maxListingsPerDistrict` | integer ≥ 0 | `0` | tryb `perDistrict`: limit na dzielnicę i stronę rynku; `0` = automatycznie `max(150, ceil(1500 / liczba_dzielnic))`; `maxListingsPerSide` jest wtedy ignorowany (opisz to w polu) |
 | `minScore` | integer 0–100 | 0 | zwraca tylko oferty z oceną ≥ |
 | `includePrimaryMarket` | boolean | true | czy liczyć rynek pierwotny |
 | `minSaleSample` / `minRentSample` | integer | 15 / 10 | próg grupy przed fallbackiem |
 | `onlyNewOrChanged` | boolean | false | monitoring: tylko nowe oferty i obniżki |
 | `stateKey` | string | `default` | nazwa pamięci monitoringu |
 | `outputCurrency` | enum | `EUR` | `EUR` / `local` — waluta sortowania; lokalna zawsze obecna |
-| `proxyConfiguration` | object (editor `proxy`) | `{"useApifyProxy": true, "apifyProxyGroups": ["RESIDENTIAL"], "apifyProxyCountry": "PL"}` | Otodom: rezydencjalne PL; czeskie źródło: do ustalenia. Potwierdzone w źródle SDK `apify` 4.3.0 (`_actor.py`, `create_proxy_configuration`): czyta `useApifyProxy`, `apifyProxyCountry`, `apifyProxySubdivision`, `apifyProxyGroups`, `proxyUrls`; jawny argument `country_code=` ma pierwszeństwo przed inputem |
+| `proxyConfiguration` | object (editor `proxy`) | do ustalenia w briefie M3 (test M3: `{"useApifyProxy": true, "apifyProxyGroups": ["BUYPROXIES94952"]}`; residential PL: `{"useApifyProxy": true, "apifyProxyGroups": ["RESIDENTIAL"], "apifyProxyCountry": "PL"}` dopiero po decyzji właściciela, §0 decyzja 8) | Kod obsługuje oba warianty. Potwierdzone w źródle SDK `apify` 4.3.0 (`_actor.py`, `create_proxy_configuration`): czyta `useApifyProxy`, `apifyProxyCountry`, `apifyProxySubdivision`, `apifyProxyGroups`, `proxyUrls`; jawny argument `country_code=` ma pierwszeństwo przed inputem |
 
 ---
 
@@ -462,7 +429,7 @@ Gdy `onlyNewOrChanged = true`: otwórz nazwany key-value store `cee-rental-yield
 - Limiter: 1 zapytanie/s na domenę (otodom.pl, sreality.cz, ecb.europa.eu osobno). Miasta można przetwarzać równolegle, jeśli są z różnych domen.
 - Retry: 3 próby z backoffem wykładniczym + jitter na 429/5xx/timeout. 403 i strona z captchą = blokada: licz w `blocked`, zmień sesję proxy, ponów raz.
 - Jeśli blokady > 20% zapytań (min. 10 zapytań) w oknie **miasto × strona rynku** → przerwij to źródło z błędem opisowym („www.otodom.pl blocked X of Y requests (katowice sale); try residential proxy PL”). Okno, nie licznik skumulowany dla domeny (zrobione 2026-11-18).
-- Proxy: `await Actor.create_proxy_configuration(actor_proxy_input=...)`, URL per sesja. Lokalnie bez Apify proxy (zmienna środowiskowa lub brak tokena) → bez proxy.
+- Proxy: `await Actor.create_proxy_configuration(actor_proxy_input=...)`, URL per sesja (`new_url(session_id=...)`). Lokalnie bez proxy — dostęp do proxy spoza Actorów jest na koncie wyłączony (§0 decyzja 8). Pierwszy test na platformie: datacenter `BUYPROXIES94952` (5 IP z USA) z rotacją sesji; blokady > 5% → stop i raport; residential PL po decyzji właściciela.
 - `scripts/measure.py`: uruchamia pełne pobieranie dla wskazanych miast i wypisuje tabelę: strony, oferty, % blokad, czas, bajty pobrane (do szacowania kosztu proxy), % grup z pełną próbą.
 
 **Bramka decyzyjna po weekendzie 1** (do zapisania w PR / README dla autora): blokady ≤ 5%, koszt proxy ≤ $1 na miasto (bajty × cena GB proxy), ≥ 70% oczyszczonych ofert sprzedaży porównanych na poziomie dzielnicy (`saleGroupLevel == "district"`; mianownik = wszystkie oczyszczone oferty sprzedaży miasta). Jeśli nie przechodzi — zmieniamy miasta, próbkowanie albo źródło, zanim powstanie reszta.
@@ -530,7 +497,8 @@ curl -s https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml > tests/fi
 - Naliczaj przez SDK (`Actor.charge(event_name=..., count=...)` albo `push_data` z nazwą zdarzenia — **sprawdź aktualne API w dokumentacji SDK**).
 - Respektuj limit kosztu ustawiony przez użytkownika (SDK zwraca informację o osiągnięciu limitu) — po osiągnięciu limitu przestań zapisywać rekordy i zakończ uruchomienie poprawnie, z notką w `RUN_SUMMARY`.
 - Pusty wynik / blokada / błąd = zero zdarzeń.
-- Lokalnie (bez platformy) naliczanie ma być no-op bez wyjątków.
+- Lokalnie (bez platformy) naliczanie ma być no-op bez wyjątków. (SDK 4.3.0: poza modelem pay-per-event `Actor.charge` loguje jedno ostrzeżenie i zwraca `charged_count=0`.)
+- **Koszty platformy płaci autor** (§0 decyzja 9): Apify potrąca je z wypłaty; zysk = 0,8 × przychód − koszty platformy (compute, proxy, transfer). Dlatego każdy koszt w M3 liczymy z perspektywy autora.
 
 **Lokalne uruchamianie:** Apify CLI (`npm i -g apify-cli`), `apify login`, wejście w `storage/key_value_stores/default/INPUT.json`, `apify run --purge`. Testy: `pytest -q`.
 
@@ -540,24 +508,24 @@ curl -s https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml > tests/fi
 
 ## 16. README (strona w Apify Store, po angielsku)
 
-Sekcje: tytuł → dwa zdania „co i dla kogo” → **What you get** (yield per district, deal score, EUR) → **Quick start** (domyślne wejście + przykład dla Brna i Krakowa) → **Output** (oba typy rekordów, przykłady) → **How the numbers are computed** (wzory z §9 prostym językiem, asking prices, gross not net) → **Why the numbers can be trusted** (pułapka czynszu Otodom, liczebność próby, confidence, brak danych osobowych, głośna porażka = $0) → **Monitoring** → **Pricing** (tabela zdarzeń, przykładowy koszt: Kraków ok. 24 grupy ≈ $0.50, 1500 ocenionych ofert = $6) → **Limitations** (ceny ofertowe, nie transakcyjne; brak stanu wykończenia — tania oferta może być do remontu; tylko wymienione miasta) → **FAQ** → **Data sources and responsible use** (tylko strony wyników, 1 req/s, bez danych osobowych, link do oferty zamiast kopii).
+Sekcje: tytuł → dwa zdania „co i dla kogo” → **What you get** (yield per district, deal score, EUR) → **Quick start** (domyślne wejście + przykład dla Wrocławia i Krakowa) → **Output** (oba typy rekordów, przykłady) → **How the numbers are computed** (wzory z §9 prostym językiem, asking prices, gross not net) → **Why the numbers can be trusted** (pułapka czynszu Otodom, liczebność próby, confidence, brak danych osobowych, głośna porażka = $0) → **Monitoring** → **Pricing** (tabela zdarzeń; przykładowy koszt z pomiaru 2026-11-18 przy domyślnym próbkowaniu: Kraków ok. 2 970 ocenionych ofert ≈ $11.90 + ok. 49 grup ≈ $0.98; domyślne uruchomienie Warszawa + Kraków ≈ $27 — liczby z briefu M3) → **Limitations** (ceny ofertowe, nie transakcyjne; próba to bieżąca podaż — sortowanie LATEST, wiek próby w wyniku; kafelki inwestycji i `relatedAds` pomijane; brak stanu wykończenia — tania oferta może być do remontu; mały rynek najmu w Katowicach; na razie tylko Polska) → **FAQ** → **Data sources and responsible use** (tylko strony wyników, 1 req/s, bez danych osobowych, link do oferty zamiast kopii).
 
 Gotowy początek (użyj go):
 
 ```markdown
 # Rental Yield & Deal Score
 
-Where does a rental apartment earn the most in Central Europe, and which listing is priced below its neighbourhood?
+Where does a rental apartment earn the most, and which listing is priced below its neighbourhood?
 One run samples both sides of the local market – apartments for sale and for long-term rent – and returns:
 
 - **Gross rental yield per district and room count**, with medians, quartiles and sample sizes.
 - **A 0–100 deal score for every listing for sale**, against the median price per m² of comparable flats.
-- **Everything in EUR** (ECB daily rate) next to PLN or CZK, so Warsaw and Prague compare directly.
+- **Everything in EUR** (ECB daily rate) next to the local currency, so cities compare directly.
 
 Asking prices and advertised rents, honestly labelled. Gross, not net.
 ```
 
-Dodatkowo w Apify: trzy „examples” (zapisane zadania z gotowym wejściem): „Rental yield by district in Prague”, „Underpriced 2-room flats in Kraków” (`minScore: 80`, `rooms: [2]`), „Brno vs Wrocław: where buy-to-let pays more”.
+Dodatkowo w Apify: trzy „examples” (zapisane zadania z gotowym wejściem): „Rental yield by district in Warsaw”, „Underpriced 2-room flats in Kraków” (`minScore: 80`, `rooms: [2]`), „Warsaw vs Wrocław: where buy-to-let pays more”. (Przykłady z Pragą i Brnem — w 1.1.)
 
 ---
 
@@ -573,23 +541,24 @@ Dodatkowo w Apify: trzy „examples” (zapisane zadania z gotowym wejściem): �
 - [x] `scripts/measure.py` + pomiar 7 miast
 - [x] **kryterium 3 bramki** dla 4 miast PL (metryka ważona ofertami, §13)
 - [x] wyjaśnienie `not_flat` (kafelki `INVESTMENT`), sonda `by=LATEST` i `limit`
-- [ ] decyzja z bramki §13 — dane i rekomendacja w §6.1, decyzja właściciela
+- [x] decyzja z bramki §13 — per dzielnica, kwota automatyczna (§0 decyzja 5)
 
-**M2 — statystyka (weekend 2)**
+**M2 — statystyka (weekend 2)** — gotowe (2026-11-18)
 - [x] usunięcie Sreality z repo
-- [x] czeskie źródło: przegląd alternatyw (§6.2a) i rekomendacja w PR — decyzja właściciela
+- [x] czeskie źródło: przegląd alternatyw (§6.2a) — decyzja: `reality.idnes.cz` w 1.1
 - [x] `fx.py` z testem na XML
 - [x] `stats.py` ze wzorami z §9 (niezależny fallback sprzedaży i najmu), testy syntetyczne
-- [ ] `output.py`: rekordy `areaYield`, `scoredListing` — są; `RUN_SUMMARY` — na razie wpis per strona rynku (`build_side_summary`), całość w M3
-- [ ] ręczna weryfikacja 20 ofert (PL) — CSV gotowy (`storage/m2_review_sample.csv`), sprawdza właściciel
+- [x] `output.py`: rekordy `areaYield`, `scoredListing`, wpis `RUN_SUMMARY` per strona rynku (`build_side_summary`) — pełny `RUN_SUMMARY` przeniesiony do M3
+- [x] ręczna weryfikacja 20 ofert (PL) — zaliczona przez właściciela (cena, metraż, pokoje, dzielnica)
 
-**M3 — Actor (weekend 3)**
+**M3 — Actor (weekend 3)** — plan w briefie M3, czeka na akceptację
+- [ ] `main.py` (orkiestracja) i pełny `RUN_SUMMARY` (przeniesione z M2)
 - [ ] `input_schema.json`, `dataset_schema.json`, `actor.json`, `Dockerfile`
 - [ ] naliczanie zdarzeń + limit kosztu + $0 przy porażce
 - [ ] monitoring (`monitor.py`) z testem
 - [ ] README (§16), trzy przykłady
 - [ ] test na prywatnym Actorze w Apify: domyślne uruchomienie < 5 min, koszt pełnej oceny miasta < 25% przychodu z uruchomienia
-- [ ] **ponowny pomiar blokad na platformie Apify z proxy** (M1 mierzył z domowego IP bez proxy) — kryterium 1 bramki obowiązuje dla środowiska produkcyjnego
+- [ ] **ponowny pomiar blokad na platformie Apify z proxy** (M1 mierzył z domowego IP bez proxy) — najpierw datacenter `BUYPROXIES94952`; > 5% blokad → stop i raport; kryterium 1 bramki obowiązuje dla środowiska produkcyjnego
 
 **M4 — publikacja (weekend 4)**
 - [ ] Actor publiczny w Apify Store pod `pl-datanest`, ceny ustawione przez właściciela
@@ -604,14 +573,15 @@ Dodatkowo w Apify: trzy „examples” (zapisane zadania z gotowym wejściem): �
 - Logi: liczby i kody, nigdy treść ogłoszeń ani dane osobowe.
 - Aktualizuj ten plik, gdy coś z **[DO WERYFIKACJI]** zostanie potwierdzone albo obalone: zamień oznaczenie na „potwierdzone (data, fixture)” albo popraw opis.
 
-## 19. Otwarte pytania (stan 2026-11-18, noc)
+## 19. Otwarte pytania (stan 2026-11-18, wieczór, po PR #1)
 
 Rozstrzygnięte: `robots.txt` Otodom, `transaction`, slugi miast, ścieżka i lista dzielnic (fixture + żywe: Warszawa 18, Wrocław 5), `INVESTMENT` = kafelki projektów, sortowanie LATEST + `limit=72`, definicja i mianownik bramki, nazwa produktu, przepisanie historii git, Sreality wyłączone.
 
 Rozstrzygnięte też (2026-11-18, późno): wynik bramki po LATEST/72 (§13), klucze proxy w SDK (`apifyProxyCountry` czytane z inputu, §10), `limit=100` → po cichu 36, strona 1 HTML honoruje LATEST/72.
 
+Rozstrzygnięte też (2026-11-18, wieczór): domyślne próbkowanie (per dzielnica, kwota automatyczna), 1.0 tylko Polska (Czechy w 1.1 przez `reality.idnes.cz`, `bezrealitky.cz` odpada), weryfikacja ręczna M2 zaliczona, strategia proxy w M3, perspektywa kosztów (płaci autor).
+
 Otwarte:
-1. Domyślny tryb próbkowania i kwota na dzielnicę — rekomendacja w §6.1 (per dzielnica, `max(150, ceil(1500 / liczba_dzielnic))`), decyzja właściciela.
-2. Czy `developmentId > 0` zgadza się z rynkiem pierwotnym (część weryfikacji ręcznej, CSV z §0 zadanie 7).
-3. Czeskie źródło (§6.2a): kandydat `reality.idnes.cz`; brakuje liczb ofert dla Pragi (najem), Brna, Ostrawy i przeglądu regulaminów — decyzja właściciela.
-4. Blokady i czas zapytania na platformie Apify z proxy rezydencjalnym PL (M3) — wpływa na „domyślne uruchomienie < 5 min”.
+1. Czy `developmentId > 0` zgadza się z rynkiem pierwotnym — CSV weryfikacji M2 nie miał tej kolumny; do sprawdzenia przy kolejnej próbce.
+2. Blokady i czas zapytania na platformie Apify z datacenter (5 IP z USA), potem ewentualnie residential PL (M3) — wpływa na „domyślne uruchomienie < 5 min”.
+3. Pytania z briefu M3 (sekcja „Ryzyka i otwarte pytania”).
