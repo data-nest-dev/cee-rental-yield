@@ -11,7 +11,8 @@ RUN echo "Python version:" \
  && echo "All installed Python packages:" \
  && pip freeze
 
-COPY . ./
+# Only the Actor code goes into the image (no tests, fixtures, scripts or notes).
+COPY src ./src
 
 RUN python -m compileall -q src/
 
