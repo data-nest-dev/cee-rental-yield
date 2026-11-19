@@ -5,6 +5,7 @@ import logging
 import re
 from datetime import date, datetime
 
+from src.location import address_city_differs, names_other_city
 from src.flags import FLAG_AUCTION, FLAG_NEEDS_RENOVATION, FLAG_SHARE, classify_title
 from src.config import (
     CITIES,
@@ -395,6 +396,7 @@ def parse_otodom_items(
     for raw in raw_items:
         # The title is used only to classify the listing in memory; it is removed right below.
         title_flags = classify_title(raw.get("title"))
+        title_text = raw.get("title")
         # Strip PII immediately
         # relatedAds: unit ads nested in INVESTMENT tiles, each with its own owner and address
         for pii_key in ("advertOwner", "organisationAssignedMember", "agency",
@@ -471,7 +473,13 @@ def parse_otodom_items(
             elif level == "district":
                 district = loc.get("name")
 
-        if not in_city:
+        city_slug = city_config.location_path.rsplit("/", 1)[-1]
+        address_city = (raw.get("location", {}).get("address") or {}).get("city")
+        misplaced = (
+            names_other_city(city_slug, slug, title_text)
+            or address_city_differs(city_slug, address_city)
+        )
+        if not in_city or misplaced:
             reject("outside_city")
             continue
 

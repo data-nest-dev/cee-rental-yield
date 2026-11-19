@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import re
 import json
 from datetime import date
 from pathlib import Path
@@ -104,6 +105,10 @@ class FakeSource:
         from src.config import CITIES
         target = CITIES[city_key].location_path
         for it in items:
+            # fixtures are Katowice listings: drop the city name from slug/title so the location check accepts them
+            it["slug"] = re.sub(r"katowic\w*", "miasto", it.get("slug", ""))
+            if isinstance(it.get("title"), str):
+                it["title"] = re.sub(r"(?i)katowic\w*", "Miasto", it["title"])
             for loc in it.get("location", {}).get("reverseGeocoding", {}).get("locations", []):
                 loc["id"] = loc.get("id", "").replace("slaskie/katowice/katowice/katowice", target)
         stats = {"pages_fetched": 1, "raw_items": len(items), "fetched_items": len(items),
@@ -265,7 +270,7 @@ async def test_monitoring_reports_only_the_price_cut() -> None:
 
     def cut(items, tx):
         for it in items:
-            if it.get("slug") == slug:
+            if re.sub(r"katowic\w*", "miasto", it.get("slug", "")) == slug:
                 it["totalPrice"]["value"] = round(it["totalPrice"]["value"] * 0.95)
 
     actor.pushed.clear()
