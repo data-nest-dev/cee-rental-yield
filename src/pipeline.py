@@ -107,6 +107,11 @@ async def fetch_city(http: HttpClient, source: OtodomSource, city_key: str, run_
             "proxySessions": dict(window.sessions) if window else {},
             "nearDuplicateSale": dup_counters.get("near_duplicate_sale", 0),
         })
+        if tx == "rent":
+            fetched = stats.get("fetched_items", 0)
+            summary["nearDuplicateRentShare"] = (
+                round(clean_rejected.get("near_duplicate_rent", 0) / fetched, 3) if fetched else 0.0
+            )
         result.sides[tx] = summary
         result.cleaned.extend(cleaned)
         result.coverage[tx] = SideCoverage(

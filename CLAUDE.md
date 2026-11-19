@@ -38,7 +38,9 @@ Repo: `https://github.com/data-nest-dev/cee-rental-yield` · Właściciel: datan
     2. `src/budget.py`: `SECONDS_PER_REQUEST = 1.19` (Run 1). `FIXED_SECONDS`, zapytania na dzielnicę i `BYTES_PER_REQUEST` bez zmian do ≥ 3 runów (przeszacowanie jest bezpieczne); pamięć i `USD_PER_COMPUTE_UNIT` po Run 2 i Usage.
     3. Dedupe najmu po (dzielnica, pokoje, metraż, cena, piętro, typ ogłoszeniodawcy; brak pola = pusta wartość): `rejected.near_duplicate_rent`. Dla sprzedaży tylko licznik `nearDuplicateSale` (bez usuwania).
     4. Sortowanie wyniku: `dealScore` malejąco, potem `discountVsMedianPct` malejąco.
-    5. `scoredListing.flags` (lista): `share`, `auction` — oferta wykluczona z median i z wyniku (liczniki `rejected.share_listing`, `rejected.auction_listing`); `needsRenovation` — zostaje w wyniku i medianie, z flagą; `outlier` (rabat > 40%, ≥ 2 pokoje na < 20 m², cena/m² < 0,6 mediany) — tylko flaga. `title` służy wyłącznie do klasyfikacji w pamięci (`src/flags.py`), nigdy do wyniku ani logów. Słownik słów kluczowych wstępny; poprawki po przeglądzie top 15 przez właściciela.
+    5. `scoredListing.flags` (lista): `share`, `auction` — oferta wykluczona z median i z wyniku (liczniki `rejected.share_listing`, `rejected.auction_listing`); `needsRenovation` — zostaje w wyniku i medianie, z flagą; `outlier` (rabat > 40% względem mediany grupy; jeden warunek) — tylko flaga. `title` służy wyłącznie do klasyfikacji w pamięci (`src/flags.py`), nigdy do wyniku ani logów. Słownik słów kluczowych wstępny; poprawki po przeglądzie top 15 przez właściciela.
+    5a. `share` tylko dla udziału we własności lokalu („udział w mieszkaniu/lokalu”, „1/2 udziału”, „sprzedam udział”; ułamki tylko obok słowa udział/własności); frazy garażowe i gruntowe jawnie wykluczone. `RUN_SUMMARY.cities.*.sides.rent.nearDuplicateRentShare` = odrzucone `near_duplicate_rent` / pobrane; > 15% na żywych danych zgłaszać.
+    5b. `outputCurrency` usunięte (input, kod, README): wynik zawsze ma EUR i walutę lokalną.
     6. Brief M3 nie jest już prowadzony jako artifact: decyzje w CLAUDE.md, raporty w czacie.
     7. Test limitu kosztu na platformie niepotrzebny: pokrywa go lokalny test integracyjny (`tests/test_integration_sdk.py`, decyzja z 2026-11-18).
 
@@ -391,7 +393,6 @@ Domyślne uruchomienie bez ustawień ma dać sensowny wynik w kilka minut (Warsz
 | `minSaleSample` / `minRentSample` | integer | 15 / 10 | próg grupy przed fallbackiem |
 | `onlyNewOrChanged` | boolean | false | monitoring: tylko nowe oferty i obniżki |
 | `stateKey` | string | `default` | nazwa pamięci monitoringu |
-| `outputCurrency` | enum | `EUR` | `EUR` / `local` — waluta sortowania; lokalna zawsze obecna |
 | `proxyConfiguration` | object (editor `proxy`) | do ustalenia w briefie M3 (test M3: `{"useApifyProxy": true, "apifyProxyGroups": ["BUYPROXIES94952"]}`; residential PL: `{"useApifyProxy": true, "apifyProxyGroups": ["RESIDENTIAL"], "apifyProxyCountry": "PL"}` dopiero po decyzji właściciela, §0 decyzja 8) | Kod obsługuje oba warianty. Potwierdzone w źródle SDK `apify` 4.3.0 (`_actor.py`, `create_proxy_configuration`): czyta `useApifyProxy`, `apifyProxyCountry`, `apifyProxySubdivision`, `apifyProxyGroups`, `proxyUrls`; jawny argument `country_code=` ma pierwszeństwo przed inputem |
 
 ---

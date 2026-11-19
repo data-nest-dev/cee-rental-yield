@@ -523,3 +523,18 @@ def test_sort_scored_breaks_score_ties_by_discount() -> None:
     recs = [(None, {"dealScore": 100, "discountVsMedianPct": d, "id": i}) for i, d in enumerate([20.0, 49.4, 35.0])]
     recs.append((None, {"dealScore": 99, "discountVsMedianPct": 60.0, "id": 9}))
     assert [r["id"] for _, r in sort_scored(recs)] == [1, 2, 0, 9]
+
+
+@pytest.mark.asyncio
+async def test_rent_side_reports_near_duplicate_share() -> None:
+    def twin_rents(items, transaction):
+        if transaction == "rent":
+            for it in items[1:]:
+                for k in ("areaInSquareMeters", "totalPrice", "floorNumber", "roomsNumber", "isPrivateOwner"):
+                    it[k] = copy.deepcopy(items[0].get(k))
+                it["location"] = copy.deepcopy(items[0]["location"])
+    _, _, summary = await _run({"cities": ["katowice"]}, source=FakeSource(mutate=twin_rents))
+    sides = summary["cities"]["katowice"]["sides"]
+    assert sides["rent"]["rejected"]["near_duplicate_rent"] > 0
+    assert 0 < sides["rent"]["nearDuplicateRentShare"] <= 1
+    assert "nearDuplicateRentShare" not in sides["sale"]
