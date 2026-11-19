@@ -68,10 +68,8 @@ def build_area_yield(
         "computedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
-# Preliminary thresholds for the `outlier` flag (CLAUDE.md section 0, decision 14.5)
+# `outlier` flag: asking price more than this far below the group median (CLAUDE.md section 0, decision 14.5)
 OUTLIER_DISCOUNT_PCT = 40.0
-OUTLIER_PRICE_RATIO = 0.6
-OUTLIER_SMALL_AREA_M2 = 20.0
 
 
 def build_scored_listing(
@@ -106,11 +104,7 @@ def build_scored_listing(
         dom = (date.today() - listing.first_published).days
 
     flags = list(listing.flags)
-    if (
-        discount > OUTLIER_DISCOUNT_PCT
-        or ppm2_eur < OUTLIER_PRICE_RATIO * median_ppm2
-        or (listing.rooms is not None and listing.rooms >= 2 and listing.area_m2 < OUTLIER_SMALL_AREA_M2)
-    ):
+    if discount > OUTLIER_DISCOUNT_PCT:
         flags.append("outlier")
 
     return {

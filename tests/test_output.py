@@ -167,13 +167,6 @@ class TestFlags:
     def test_deep_discount_is_flagged_outlier(self) -> None:
         assert "outlier" in self._record(price_local=1000.0)["flags"]
 
-    def test_small_multi_room_flat_is_flagged_outlier(self) -> None:
-        import statistics
-        comps = _make_comparables()
-        median = statistics.median(ls.price_local / ls.area_m2 for ls in comps.sale_listings)
-        assert "outlier" in self._record(area_m2=18.0, rooms=2, price_local=median * 18)["flags"]
-        assert "outlier" not in self._record(area_m2=18.0, rooms=1, price_local=median * 18)["flags"]
-
     def test_listing_flags_are_carried_over(self) -> None:
         import statistics
         comps = _make_comparables()

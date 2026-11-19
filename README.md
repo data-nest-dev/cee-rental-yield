@@ -82,7 +82,7 @@ A `scoredListing` record (example values):
 `flags` lists reasons to look at a listing twice:
 
 - `needsRenovation` – the listing says the flat needs renovation. It stays in the results and in the medians, so a cheap price may reflect the condition.
-- `outlier` – priced more than 40% below its group's median, or a 2+ room flat under 20 m². Often a data quirk or a special case; check the listing before trusting the score.
+- `outlier` – priced more than 40% below its group's median. Often a data quirk or a special case; check the listing before trusting the score.
 
 Listings that are a share of a flat (`share`) or a court auction (`auction`) are not comparable to ordinary flats. They are left out of the medians and of the results, and counted in `RUN_SUMMARY` (`share_listing`, `auction_listing`). Flags come from keywords in the listing title; the title itself is never stored or returned. Repeated posts of the same rental (same district, rooms, area, price, floor and advertiser type) count once (`near_duplicate_rent` in `RUN_SUMMARY`). Results are sorted by deal score, then by discount against the median.
 

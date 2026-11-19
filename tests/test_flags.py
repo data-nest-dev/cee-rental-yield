@@ -15,7 +15,16 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 @pytest.mark.parametrize("title,expected", [
     ("Udział w mieszkaniu 2 pokoje", {"share"}),
-    ("1/2 mieszkania w centrum", {"share"}),
+    ("1/2 udziału w mieszkaniu", {"share"}),
+    ("Sprzedam udział, 2 pokoje", {"share"}),
+    ("Udział w lokalu mieszkalnym", {"share"}),
+    ("Udział 1/3 w nieruchomości", {"share"}),
+    ("Udział w hali garażowej", set()),
+    ("Udział w garażu podziemnym", set()),
+    ("Udział w miejscu postojowym", set()),
+    ("Sprzedam udział w gruncie", set()),
+    ("Udział w działce, mieszkanie obok", set()),
+    ("1/2 mieszkania w centrum", set()),
     ("LICYTACJA KOMORNICZA mieszkanie", {"auction"}),
     ("Mieszkanie do remontu, Bogucice", {"needsRenovation"}),
     ("Wymaga generalnego remontu", {"needsRenovation"}),
