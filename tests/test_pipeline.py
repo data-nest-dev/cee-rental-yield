@@ -26,7 +26,8 @@ class FakeActor:
         self.kv: dict[str, dict] = {}
         self.failed: str | None = None
         self.statuses: list[str] = []
-        self.capacity = capacity  # remaining chargeable count per event; None = unlimited
+        self.capacity = capacity  # remaining chargeable count per event; None = not pay-per-event
+        self.state: dict[str, dict] = {}
 
     async def push(self, records: list[dict], event: str | None) -> tuple[int, bool]:
         async def pusher(batch: list[dict], charged_event: str | None) -> int:
@@ -43,6 +44,12 @@ class FakeActor:
     def charged_count(self, event: str) -> int | None:
         return None
 
+    async def load_state(self, key: str) -> dict:
+        return copy.deepcopy(self.state.get(key, {}))
+
+    async def save_state(self, key: str, state: dict) -> None:
+        self.state[key] = copy.deepcopy(state)
+
     async def set_value(self, key: str, value: dict) -> None:
         self.kv[key] = copy.deepcopy(value)
 
@@ -57,9 +64,10 @@ class FakeActor:
 
 
 class FakeSource:
-    def __init__(self, blocked: set[str] = frozenset(), empty: set[str] = frozenset()) -> None:
+    def __init__(self, blocked: set[str] = frozenset(), empty: set[str] = frozenset(), mutate=None) -> None:
         self.blocked = blocked
         self.empty = empty
+        self.mutate = mutate
         self.calls: list[tuple[str, str, int, int | None]] = []
 
     async def fetch_listings(self, city_key, transaction, max_listings, max_per_district=None):
@@ -67,6 +75,8 @@ class FakeSource:
         if city_key in self.blocked:
             raise BlockedError(f"www.otodom.pl blocked 9 of 11 requests ({city_key} {transaction})")
         items = [] if city_key in self.empty else copy.deepcopy(ITEMS[transaction])
+        if self.mutate:
+            self.mutate(items, transaction)
         # The fixtures are Katowice listings; re-home them so any configured city accepts them.
         from src.config import CITIES
         target = CITIES[city_key].location_path
@@ -193,3 +203,70 @@ async def test_charge_limit_stops_cleanly_with_free_records_and_best_deals() -> 
     assert summary["events"]["scored-listing"]["pushed"] == 3
     assert summary["events"]["scored-listing"]["chargeable"] > 3
     assert actor.statuses[-1].startswith("Stopped at your maximum charge")
+
+
+MONITOR = {"cities": ["katowice"], "onlyNewOrChanged": True, "stateKey": "watch-1", "mode": "scoreListings"}
+
+
+@pytest.mark.asyncio
+async def test_monitoring_first_run_marks_everything_new_and_saves_state() -> None:
+    actor, _, summary = await _run(MONITOR)
+    scored = actor.records("scoredListing")
+    assert scored and {r["changeType"] for r in scored} == {"new"}
+    assert all(r["firstSeenAt"] == "2026-11-18" for r in scored)
+    assert len(actor.state["watch-1"]) == len(scored)
+    assert summary["monitoring"]["new"] == len(scored)
+
+
+@pytest.mark.asyncio
+async def test_monitoring_quiet_rerun_succeeds_with_nothing_to_charge() -> None:
+    actor = FakeActor()
+    await _run(MONITOR, actor=actor)
+    actor.pushed.clear()
+    _, _, summary = await _run(MONITOR, actor=actor)
+    assert actor.failed is None
+    assert actor.pushed == []
+    assert summary["status"] == "ok" and summary["monitoring"]["unchanged"] > 0
+    assert actor.statuses[-1] == "No new or cheaper listings since the last run."
+
+
+@pytest.mark.asyncio
+async def test_monitoring_reports_only_the_price_cut() -> None:
+    actor = FakeActor()
+    await _run(MONITOR, actor=actor)
+    first = actor.records("scoredListing")
+    target_url = first[0]["url"]
+    slug = target_url.rsplit("/", 1)[-1]
+
+    def cut(items, tx):
+        for it in items:
+            if it.get("slug") == slug:
+                it["totalPrice"]["value"] = round(it["totalPrice"]["value"] * 0.95)
+
+    actor.pushed.clear()
+    _, _, summary = await _run(MONITOR, FakeSource(mutate=cut), actor=actor)
+    scored = actor.records("scoredListing")
+    assert [r["url"] for r in scored] == [target_url]
+    assert scored[0]["changeType"] == "priceCut" and scored[0]["priceCutPct"] == pytest.approx(5.0, abs=0.1)
+    assert scored[0]["firstSeenAt"] == "2026-11-18"
+
+
+@pytest.mark.asyncio
+async def test_listings_held_back_by_the_limit_stay_new_for_the_next_run() -> None:
+    actor = FakeActor(capacity={"area-yield": 0, "scored-listing": 2})
+    _, _, first = await _run(MONITOR, actor=actor)
+    total_new = first["monitoring"]["new"]
+    assert first["monitoring"]["heldBack"] == total_new - 2
+    assert len(actor.state["watch-1"]) == 2
+
+    actor.capacity = None
+    actor.pushed.clear()
+    _, _, second = await _run(MONITOR, actor=actor)
+    assert second["monitoring"]["new"] == total_new - 2
+
+
+def test_scored_listing_without_monitoring_has_null_change_fields() -> None:
+    import asyncio
+    actor, _, _ = asyncio.run(_run({"cities": ["katowice"], "mode": "scoreListings"}))
+    rec = actor.records("scoredListing")[0]
+    assert (rec["changeType"], rec["priceCutPct"], rec["firstSeenAt"]) == (None, None, None)

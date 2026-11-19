@@ -14,6 +14,7 @@ from src.fx import parse_ecb_rates
 from src.http import BlockedError, HttpClient
 from src.inputs import ROOM_BUCKETS, InputError, RunInput, parse_input
 from src.models import Listing
+from src.monitor import compute_changes, update_state
 from src.output import build_area_yield, build_scored_listing, build_side_summary
 from src.sources.otodom import DOMAIN, OtodomSource, parse_otodom_items
 from src.stats import (
@@ -33,6 +34,8 @@ class ActorPort(Protocol):
 
     async def push(self, records: list[dict], event: str | None) -> tuple[int, bool]: ...
     def charged_count(self, event: str) -> int | None: ...
+    async def load_state(self, key: str) -> dict: ...
+    async def save_state(self, key: str, state: dict) -> None: ...
     async def set_value(self, key: str, value: dict) -> None: ...
     async def fail(self, message: str) -> None: ...
     async def status(self, message: str) -> None: ...
@@ -160,6 +163,32 @@ def compute_city(city: CityResult, run_input: RunInput, rates: dict[str, float],
     )
 
 
+def apply_monitoring(
+    scored: list[tuple[Listing, dict]], state: dict, as_of: date,
+) -> tuple[list[tuple[Listing, dict]], list[tuple[Listing, dict]]]:
+    """Split scored listings into new/price-cut (annotated) and unchanged."""
+    changes = compute_changes({ls.dedup_key: {"price_local": ls.price_local} for ls, _ in scored}, state)
+    changed, unchanged = [], []
+    for ls, rec in scored:
+        prev = state.get(ls.dedup_key)
+        rec["firstSeenAt"] = prev["firstSeenAt"] if prev else as_of.isoformat()
+        if rec["daysOnMarket"] is None:
+            rec["daysOnMarket"] = (as_of - date.fromisoformat(rec["firstSeenAt"])).days
+        change = changes.get(ls.dedup_key)
+        if change:
+            rec["changeType"] = change["change_type"]
+            rec["priceCutPct"] = change["price_cut_pct"]
+            changed.append((ls, rec))
+        else:
+            rec["changeType"] = "unchanged"
+            unchanged.append((ls, rec))
+    return changed, unchanged
+
+
+def _price_map(items: list[tuple[Listing, dict]]) -> dict[str, dict]:
+    return {ls.dedup_key: {"price_local": ls.price_local} for ls, _ in items}
+
+
 def sort_scored(scored: list[tuple[Listing, dict]], output_currency: str) -> list[tuple[Listing, dict]]:
     """Best deals first: the dataset view cannot sort, and a cost-limited run keeps the head of this list."""
     def per_m2(item: tuple[Listing, dict]) -> float:
@@ -240,6 +269,26 @@ async def _run(
     area_records = [rec for out in outputs.values() for rec in out.area_records]
     scored = sort_scored([item for out in outputs.values() for item in out.scored], run_input.output_currency)
 
+    state: dict | None = None
+    unchanged: list[tuple[Listing, dict]] = []
+    if run_input.only_new_or_changed and outputs:
+        state = await actor.load_state(run_input.state_key) or {}
+        scored, unchanged = apply_monitoring(scored, state, as_of)
+        summary["monitoring"] = {
+            "stateKey": run_input.state_key, "knownListings": len(state),
+            "new": sum(rec["changeType"] == "new" for _, rec in scored),
+            "priceCut": sum(rec["changeType"] == "priceCut" for _, rec in scored),
+            "unchanged": len(unchanged),
+        }
+        if not area_records and not scored:
+            # A quiet watchlist is a normal result for a scheduled run, not a failure.
+            await actor.save_state(run_input.state_key, update_state(state, _price_map(unchanged), as_of))
+            summary.update(status="ok", records={"areaYield": 0, "scoredListing": 0},
+                           timeS=round(time.monotonic() - started, 1))
+            await actor.set_value("RUN_SUMMARY", summary)
+            await actor.status("No new or cheaper listings since the last run.")
+            return summary
+
     if not area_records and not scored:
         reasons = "; ".join(f"{k}: {v['reason'] or 'no results'}" for k, v in summary["cities"].items())
         summary.update(status="failed", reason=f"No results ({reasons})", timeS=round(time.monotonic() - started, 1))
@@ -263,6 +312,13 @@ async def _run(
     pushed_area, area_limit = await actor.push(charged_area, AREA_YIELD_EVENT)
     pushed_scored, scored_limit = await actor.push(scored_records, SCORED_LISTING_EVENT)
     limit_reached = area_limit or scored_limit
+
+    if state is not None:
+        # Listings held back by the cost limit stay unseen, so the next run still delivers them.
+        observed = scored[:pushed_scored] + unchanged
+        new_state = update_state(state, _price_map(observed), as_of)
+        await actor.save_state(run_input.state_key, new_state)
+        summary["monitoring"].update(heldBack=len(scored) - pushed_scored, savedListings=len(new_state))
 
     failed = [k for k, v in summary["cities"].items() if v["status"] != "ok"]
     summary.update(

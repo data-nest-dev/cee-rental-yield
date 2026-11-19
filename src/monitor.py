@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
+
+STATE_STORE = "cee-rental-yield-state"
+PRICE_CUT_THRESHOLD = 0.01
+PRUNE_AFTER_DAYS = 60
 
 
 def compute_changes(
@@ -20,7 +24,7 @@ def compute_changes(
             }
         else:
             prev_price = prev.get("lastPriceLocal", price)
-            if prev_price > 0 and (prev_price - price) / prev_price >= 0.01:
+            if prev_price > 0 and (prev_price - price) / prev_price >= PRICE_CUT_THRESHOLD:
                 cut_pct = round((prev_price - price) / prev_price * 100, 2)
                 changes[dedup_key] = {
                     "change_type": "priceCut",
@@ -34,17 +38,20 @@ def compute_changes(
 def update_state(
     state: dict[str, dict],
     listings_by_key: dict[str, dict],
+    today: date | None = None,
+    prune_after_days: int = PRUNE_AFTER_DAYS,
 ) -> dict[str, dict]:
-    today = date.today().isoformat()
-    new_state = dict(state)
+    today = today or date.today()
+    iso = today.isoformat()
+    new_state = {k: dict(v) for k, v in state.items()}
 
     for dedup_key, info in listings_by_key.items():
-        if dedup_key in new_state:
-            new_state[dedup_key]["lastPriceLocal"] = info["price_local"]
-        else:
-            new_state[dedup_key] = {
-                "firstSeenAt": today,
-                "lastPriceLocal": info["price_local"],
-            }
+        entry = new_state.setdefault(dedup_key, {"firstSeenAt": iso})
+        entry["lastPriceLocal"] = info["price_local"]
+        entry["lastSeenAt"] = iso
 
-    return new_state
+    cutoff = (today - timedelta(days=prune_after_days)).isoformat()
+    return {
+        k: v for k, v in new_state.items()
+        if (v.get("lastSeenAt") or v.get("firstSeenAt") or iso) >= cutoff
+    }

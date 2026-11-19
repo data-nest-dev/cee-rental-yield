@@ -7,6 +7,7 @@ from apify import Actor
 from src.charging import push_with_charging
 from src.http import HttpClient
 from src.inputs import RunInput
+from src.monitor import STATE_STORE
 from src.pipeline import run
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,14 @@ class ApifyActorPort:
 
     async def set_value(self, key: str, value: dict) -> None:
         await Actor.set_value(key, value)
+
+    async def load_state(self, key: str) -> dict:
+        store = await Actor.open_key_value_store(name=STATE_STORE)
+        return await store.get_value(key) or {}
+
+    async def save_state(self, key: str, state: dict) -> None:
+        store = await Actor.open_key_value_store(name=STATE_STORE)
+        await store.set_value(key, state)
 
     async def fail(self, message: str) -> None:
         await Actor.fail(status_message=message)

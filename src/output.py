@@ -126,6 +126,9 @@ def build_scored_listing(
         "rentGroupLevel": comparables.rent_level,
         "confidence": comparables.confidence,
         "daysOnMarket": dom,
+        "firstSeenAt": None,
+        "changeType": None,
+        "priceCutPct": None,
     }
 
 
