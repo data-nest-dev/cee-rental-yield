@@ -69,7 +69,7 @@ A `scoredListing` record (example values):
   "recordType": "scoredListing",
   "source": "otodom", "url": "https://www.otodom.pl/pl/oferta/...",
   "country": "PL", "city": "Kraków", "district": "Podgórze", "rooms": 2, "areaM2": 48,
-  "isPrimaryMarket": false,
+  "isPrimaryMarket": null,
   "price": {"local": 610000, "currency": "PLN", "eur": 138520},
   "pricePerM2Eur": 2886, "groupMedianPricePerM2Eur": 3610,
   "dealScore": 87, "discountVsMedianPct": 20.06,
@@ -123,6 +123,7 @@ To spend less: `mode: "yieldReport"` returns only the yield groups (about $2 for
 - **Asking prices, not transaction prices.** Gross yield, not net (no taxes, vacancy, maintenance).
 - **The sample is current supply.** Listings are sampled newest first, so long-unsold stock is under-represented. Every yield record reports the sample's median age, oldest listing and share of all listings.
 - **Developer projects are counted, not scored.** Project tiles have no single price or area, and the few example units shown inside a tile are not representative; both are left out. Project counts appear in `RUN_SUMMARY`.
+- **Primary and secondary market are mixed by default.** With the default setting, price comparisons include both new builds from developers and resales, and `isPrimaryMarket` is `true` when the portal links the flat to a development and `null` (unknown) otherwise. Set `includePrimaryMarket` to `false` to request resales only; every record then has `isPrimaryMarket: false`.
 - **No information about the flat's condition.** A cheap listing may need renovation.
 - **Katowice has a small rental market** (about 770 rentals city-wide), so many of its groups fall back to the city level.
 - **Poland only for now.** More countries are planned.

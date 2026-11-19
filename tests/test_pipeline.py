@@ -500,3 +500,17 @@ async def test_monitoring_yields_follow_mode(mode: str, expect_yields: bool) -> 
     actor, _, _ = await _run({**MONITOR, "mode": mode})
     assert bool(actor.records("areaYield")) is expect_yields
     assert actor.records("scoredListing")
+
+
+@pytest.mark.asyncio
+async def test_primary_market_setting_selects_portal_filter_and_labels() -> None:
+    actor, source, _ = await _run({"cities": ["katowice"], "includePrimaryMarket": False})
+    assert source.market == "SECONDARY"
+    scored = actor.records("scoredListing")
+    assert scored and {r["isPrimaryMarket"] for r in scored} == {False}
+
+    actor, source, _ = await _run({"cities": ["katowice"]})
+    assert source.market == "ALL"
+    scored = actor.records("scoredListing")
+    assert {r["isPrimaryMarket"] for r in scored} <= {True, None}
+    assert None in {r["isPrimaryMarket"] for r in scored}

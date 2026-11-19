@@ -113,9 +113,9 @@
             "default": 1000
         },
         "includePrimaryMarket": {
-            "title": "Include new builds",
+            "title": "Include primary market (new builds)",
             "type": "boolean",
-            "description": "Include new-build listings from developers.",
+            "description": "On (default): compare new builds from developers together with resales; isPrimaryMarket is then true or null (unknown). Off: ask the portal for resales only (secondary market); every record then has isPrimaryMarket false.",
             "default": true
         },
         "samplingMode": {

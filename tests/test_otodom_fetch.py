@@ -30,6 +30,7 @@ def _html(
     districts: list[str] | None = None,
     sorting: tuple[str, str, int] = ("LATEST", "DESC", 72),
     total_items: int | None = None,
+    market: str | None = None,
 ) -> str:
     by, direction, per_page = sorting
     pagination = {"totalPages": total_pages, "itemsPerPage": per_page}
@@ -42,6 +43,7 @@ def _html(
         ]}
     data = {"buildId": build_id, "props": {"pageProps": {
         "data": page_data, "sortingOption": {"by": by, "direction": direction},
+        **({"filteringQueryParams": {"market": market}} if market else {}),
     }}}
     return f'<script id="__NEXT_DATA__" type="application/json">{json.dumps(data)}</script>'
 
@@ -297,3 +299,40 @@ async def test_zero_quota_means_automatic_quota() -> None:
     })
     _, stats = await OtodomSource(http).fetch_listings("katowice", "sale", 1500, max_per_district=0)
     assert stats["quota_per_district"] == 750
+
+
+def test_market_param_in_urls_for_all_and_secondary() -> None:
+    for market in ("ALL", "SECONDARY"):
+        src = OtodomSource(FakeHttp({}), market=market)
+        src._build_id = "B"
+        assert f"market={market}" in src._next_data_url(CITY, "sprzedaz", 1)
+        assert f"market={market}" in "&".join(src._order_params())
+    assert OtodomSource(FakeHttp({})).market == "ALL"
+
+
+@pytest.mark.asyncio
+async def test_secondary_market_sent_on_first_page_and_district_requests() -> None:
+    page1 = [_item("a1", "bogucice")]
+    http = FakeHttp({
+        f"https://www.otodom.pl/pl/wyniki/sprzedaz/mieszkanie/{CITY}": [
+            (200, _html("B1", page1, 1, districts=["bogucice"], market="SECONDARY")),
+        ],
+        _district_page("bogucice", 1): [(200, _json(page1, 1))],
+    })
+    await OtodomSource(http, market="SECONDARY").fetch_listings("katowice", "sale", 1500, max_per_district=3)
+    assert http.calls and all("market=SECONDARY" in c for c in http.calls)
+    assert not any("market=ALL" in c for c in http.calls)
+
+
+@pytest.mark.asyncio
+async def test_first_page_with_wrong_echoed_market_is_refetched_from_next_data() -> None:
+    """If the portal ignored the market filter on the HTML page, page 1 must not be reused."""
+    ignored = [_item("wrong", "bogucice")]
+    http = FakeHttp({
+        f"https://www.otodom.pl/pl/wyniki/sprzedaz/mieszkanie/{CITY}": [
+            (200, _html("B1", ignored, 1, market="ALL")),
+        ],
+        "/_next/data/B1/": [(200, _json([_item("right", "bogucice")], 1))],
+    })
+    items, _ = await OtodomSource(http, market="SECONDARY").fetch_listings("katowice", "sale", 1500)
+    assert [it["slug"] for it in items] == ["right"]

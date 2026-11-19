@@ -26,12 +26,12 @@ Repo: `https://github.com/data-nest-dev/cee-rental-yield` · Właściciel: datan
     1. `maxScoredListings` (integer ≥ 0, domyślnie 1000, 0 = wszystkie; „Return at most this many listings, best deals first. 0 = all.”): limit po wszystkich filtrach i po sortowaniu po `dealScore`. Przykład ceny domyślnego uruchomienia (Warszawa + Kraków): 109 grup × $0,02 + 1000 × $0,004 ≈ **$6,18**.
     2. Bez „charges nothing”: przy porażce nasze zdarzenia nie są naliczane, Apify pobiera tylko opłatę startową $0,00005 (`apify-actor-start`).
     3. W monitoringu grupy (`areaYield`) zależą od `mode`; README zaleca `scoreListings` dla harmonogramów.
-    4. (J9) Gdy jedna strona rynku miasta zawiedzie (blokada / błąd), całe miasto jest pomijane z powodem w `RUN_SUMMARY`; pozostałe miasta idą dalej. *(Zapisane przez Claude Code jako przyjęcie propozycji z briefu — właściciel nie podał innej treści; do potwierdzenia.)*
-    5. (J10) `rooms` jako enum tekstowy `["1","2","3","4+"]` (edytor multi-select); API przyjmuje też liczby 1–4. *(J.w., do potwierdzenia.)*
+    4. (J9) Gdy jedna strona rynku miasta zawiedzie (blokada / błąd), całe miasto jest pomijane z powodem w `RUN_SUMMARY`; pozostałe miasta idą dalej. *(Potwierdzone przez właściciela 2026-11-19: to jego decyzja z 2026-11-18.)*
+    5. (J10) `rooms` jako enum tekstowy `["1","2","3","4+"]` (edytor multi-select); API przyjmuje też liczby 1–4. *(Potwierdzone przez właściciela 2026-11-19.)*
     6. Akceptacja: prefill ≠ default, cichy run monitoringu = Succeeded, brak `flatten` w widokach w M3 (wraca w M4).
     7. `USD_PER_COMPUTE_UNIT` zostaje $0,40 do testu H (cennik Apify podaje dziś $0,20/CU dla Free/Starter; kalibracja z rachunku).
 12. **Raporty i limit (poprawki 2026-11-19):** przed push tylko wstępny `RUN_SUMMARY` (liczniki, bez wartości yield i cen); `YIELD_REPORT` po każdej wypchniętej partii, wyłącznie z wypchniętymi grupami (w `scoreListings`: tylko darmowe `low`); handler `ABORTING` zapisuje to, co wypchnięto. Pojemność budżetu liczona tak, by suma opłat była **ściśle poniżej** limitu: dokumentacja PPE: „Once it's reached, `Actor.charge()` stop charging and `Actor.pushData()` stops pushing data over the limit. The platform then aborts the run automatically.” — nigdy nie dochodzimy do limitu, więc run kończy się normalnie (Succeeded). Darmowe rekordy idą przed płatnymi. `RUN_SUMMARY`: `scoredAvailable`, `scoredReturned`, `prefillRun`.
-13. **Tożsamość git:** repo nie ma `user.email`; commity M1–M2 (24 na `main`, już wypchnięte) mają tożsamość maszyny `<previous machine identity, redacted>`. Gałąź `m3` przepisana lokalnie na `data-nest-dev <contact@datanest.dev>` przed pushem (2026-11-19). Naprawa `main` wymagałaby force push — decyzja właściciela. Claude Code ustawia tożsamość zmiennymi środowiskowymi przy każdym commicie (nie zmienia konfiguracji git).
+13. **Tożsamość git (załatwione 2026-11-19):** lokalny `git config` repo: `data-nest-dev <contact@datanest.dev>`. Autor i committer wszystkich commitów `main` i `m3` przepisani na tę tożsamość (`git filter-repo`), `main` i `m3` wypchnięte `--force-with-lease`; w historii nie ma imienia, nazwiska ani nazwy hosta (jedyne wystąpienie, linia tego punktu w CLAUDE.md, zastąpiono przy przepisywaniu). Lokalne kopie: `main-backup-identity`, `m3-backup-identity`, `m3-backup-identity-v2` — nie wypychać. Stare commity PR #1 zostają w `refs/pull/1/head` i w gałęzi `origin/latest-72` (decyzja właściciela: bez działania).
 
 **Po stronie właściciela (nie Claude Code):**
 - zaakceptować brief M3 (albo odesłać poprawki),
@@ -203,13 +203,13 @@ Weryfikacja: w odpowiedzi `pageProps.tracking.listing.selected_locations_id` mus
 | `createdAtFirst` | data pierwszej publikacji | do `daysOnMarket` |
 | `dateCreated` | data utworzenia | fallback dla `createdAtFirst` |
 | `pushedUpAt` | podbicie | **NIE używać** do czasu na rynku |
-| `developmentId`, `investmentState`, `investment*` | dane inwestycji deweloperskiej | kandydat na `isPrimaryMarket` (§6.1 rynek) |
+| `developmentId`, `investmentState`, `investment*` | dane inwestycji deweloperskiej | `developmentId > 0` ⇒ `isPrimaryMarket = true`; brak sygnału ⇒ `null` (§6.1) |
 | `isPrivateOwner`, `extendedAdvertiserType` | typ ogłoszeniodawcy | możemy zwrócić `advertiserType: "private"|"business"` |
 | `isPromoted` | promowane | ignoruj |
 
 **Pola, które musisz usunąć natychmiast po wczytaniu** (dane osobowe / treść): `advertOwner` (całe), `organisationAssignedMember` (całe), `agency` (całe; nazwy agencji JDG to imiona i nazwiska), `images`, `title`, `shortDescription`, `location.address` (ulica), `relatedAds` (zagnieżdżone pełne ogłoszenia lokali z własnymi danymi ogłoszeniodawcy i ulicą).
 
-**Rynek pierwotny/wtórny — reguła `developmentId > 0` OBALONA (2026-11-19).** Filtr wyników `market=PRIMARY|SECONDARY` (parametr z `pageProps.filteringQueryParams.market`, domyślnie `ALL`; Otodom go echo-potwierdza). Warszawa, sprzedaż, strona 1 (LATEST/72): PRIMARY `totalItems` 12 707, SECONDARY 7 598 (suma ≈ 20 274 bez filtra); `developmentId > 0` u **0 z 70** ofert pierwotnych i 0 z 72 wtórnych. `developmentId` oznacza tylko lokale powiązane z kafelkiem inwestycji. Żadne pole oferty nie rozróżnia rynków (te same klucze; jedyna słaba wskazówka: `source = urn:partner:informacja-deweloperska` tylko w pierwotnym, 12/70). Propozycja (czeka na decyzję, nie wdrożona): (a) `includePrimaryMarket: false` → filtr portalu `market=SECONDARY` (dokładny, bez dodatkowych zapytań); (b) `isPrimaryMarket`: `true` gdy `developmentId > 0`, inaczej `null` (nieznane), zamiast fałszywego `false`; (c) opcjonalnie dokładne oznaczanie przez osobne pobieranie PRIMARY i SECONDARY z kwotami proporcjonalnymi do `totalItems` (+≈2 zapytania na miasto i stronę). Uwaga: rynek pierwotny to ≈ 63% bieżącej podaży sprzedaży w Warszawie.
+**Rynek pierwotny/wtórny — reguła `developmentId > 0` OBALONA (2026-11-19).** Filtr wyników `market=PRIMARY|SECONDARY` (parametr z `pageProps.filteringQueryParams.market`, domyślnie `ALL`; Otodom go echo-potwierdza). Warszawa, sprzedaż, strona 1 (LATEST/72): PRIMARY `totalItems` 12 707, SECONDARY 7 598 (suma ≈ 20 274 bez filtra); `developmentId > 0` u **0 z 70** ofert pierwotnych i 0 z 72 wtórnych. `developmentId` oznacza tylko lokale powiązane z kafelkiem inwestycji. Żadne pole oferty nie rozróżnia rynków (te same klucze; jedyna słaba wskazówka: `source = urn:partner:informacja-deweloperska` tylko w pierwotnym, 12/70). **Decyzja właściciela (2026-11-19): (a) + (b), bez (c).** `includePrimaryMarket=false` → `market=SECONDARY` i `isPrimaryMarket=false` dla wszystkich ofert (pewne); `true` (domyślnie) → `market=ALL`, `isPrimaryMarket=true` gdy `developmentId > 0`, w pozostałych przypadkach `null`. README „Limitations” opisuje mieszanie rynków. (c) wraca po teście H, jeśli dane pokażą, że mieszanie rynków zaburza mediany. Rynek pierwotny to ≈ 63% bieżącej podaży sprzedaży w Warszawie.
 
 **Kafelki `INVESTMENT`** (dawne `not_flat`): projekty deweloperskie, nie oferty — `totalPrice`, `areaInSquareMeters`, `roomsNumber` = `null`; mają `priceFromPerSquareMeter`, `investmentUnitsNumber`, zakresy metrażu i pokoi, `investmentState`, `investmentEstimatedDelivery`, `developmentId = 0`, oraz `relatedAds` (2–3 pełne ogłoszenia lokali z `developmentId == id kafelka`). Odrzucane z powodem `primary_market_project`, liczone w `RUN_SUMMARY.primaryMarketProjects`. `relatedAds` są usuwane przy parsowaniu (dane osobowe, niereprezentatywne) — wymień to w README „Limitations”. **Duplikaty:** strony całego miasta (DEFAULT) serwują te same kafelki wielokrotnie (Katowice: 178 kafelków, 36 unikalnych) — deduplikacja po `slug` musi poprzedzać liczenie (poprawione 2026-11-18). Unikalne projekty w pomiarze per dzielnica (sprzedaż): Katowice 44, Warszawa 148, Kraków 136, Wrocław 52; mediana lokali na projekt 30–50.
 
@@ -378,7 +378,7 @@ Domyślne uruchomienie bez ustawień ma dać sensowny wynik w kilka minut (Warsz
 | `maxListingsPerDistrict` | integer ≥ 0 | `0` | tryb `perDistrict`: limit na dzielnicę i stronę rynku; `0` = automatycznie `max(150, ceil(1500 / liczba_dzielnic))`; `maxListingsPerSide` jest wtedy ignorowany (opisz to w polu) |
 | `minScore` | integer 0–100 | 0 | zwraca tylko oferty z oceną ≥ |
 | `maxScoredListings` | integer ≥ 0 | 1000 | „Return at most this many listings, best deals first. 0 = all.” Limit po filtrach i sortowaniu; odcięte oferty w monitoringu nie są oznaczane jako widziane (§0 decyzja 11.1) |
-| `includePrimaryMarket` | boolean | true | czy liczyć rynek pierwotny; dziś filtr po `developmentId > 0`, który jest niewiarygodny (§6.1) — propozycja: filtr portalu `market=SECONDARY` |
+| `includePrimaryMarket` | boolean | true | `true`: `market=ALL`, `isPrimaryMarket` = `true`/`null`; `false`: filtr portalu `market=SECONDARY`, `isPrimaryMarket` = `false` (§6.1) |
 | `minSaleSample` / `minRentSample` | integer | 15 / 10 | próg grupy przed fallbackiem |
 | `onlyNewOrChanged` | boolean | false | monitoring: tylko nowe oferty i obniżki |
 | `stateKey` | string | `default` | nazwa pamięci monitoringu |
@@ -600,9 +600,9 @@ Rozstrzygnięte też (2026-11-18, wieczór): domyślne próbkowanie (per dzielni
 
 Rozstrzygnięte też (2026-11-19): `developmentId > 0` nie oznacza rynku pierwotnego (§6.1); decyzje 11.1–11.7 i 12 w §0.
 
+Rozstrzygnięte też (2026-11-19, później): rynek pierwotny (a)+(b), J9/J10 potwierdzone, tożsamość git naprawiona (§0 decyzja 13).
+
 Otwarte:
-1. Reguła rynku pierwotnego: propozycja (a)/(b)/(c) w §6.1 — decyzja właściciela.
-1a. Decyzje 4 i 5 z 2026-11-19 (J9, J10) zapisane jako przyjęcie propozycji — do potwierdzenia.
-1b. Tożsamość 24 wypchniętych commitów na `main` (§0 decyzja 13) — naprawa tylko przez force push.
-2. Blokady i czas zapytania na platformie Apify z datacenter (5 IP z USA), potem ewentualnie residential PL (M3) — wpływa na „domyślne uruchomienie < 5 min”.
+1. (c) dokładne oznaczanie rynku — po teście H, tylko jeśli mieszanie rynków zaburza mediany (§6.1).
+2. Blokady i czas zapytania na platformie Apify z datacenter (5 IP z USA), potem ewentualnie residential PL (M3) — wpływa na „domyślne uruchomienie < 5 min”. Test H w toku.
 3. Pytania z briefu M3 (sekcja „Ryzyka i otwarte pytania”).

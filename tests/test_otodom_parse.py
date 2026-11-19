@@ -92,13 +92,20 @@ class TestOtodomSaleParsing:
                 assert item.get("transaction") == "SELL"
                 break
 
-    def test_primary_market_detection(self) -> None:
-        """developmentId > 0 → isPrimaryMarket = True"""
+    def test_primary_market_labels_under_market_all(self) -> None:
+        """market=ALL: developmentId > 0 -> True, otherwise unknown (None), never a false False."""
         listings, _ = parse_otodom_items(self.raw, self.cfg, "sale")
-        primary = [ls for ls in listings if ls.is_primary_market]
-        secondary = [ls for ls in listings if not ls.is_primary_market]
-        assert len(primary) > 0
-        assert len(secondary) > 0
+        assert {ls.is_primary_market for ls in listings} <= {True, None}
+        raw_by_slug = {r["slug"]: r for r in self.raw if r.get("slug")}
+        for ls in listings:
+            dev = raw_by_slug[ls.dedup_key].get("developmentId") or 0
+            assert (ls.is_primary_market is True) == (dev > 0)
+
+    def test_primary_market_labels_under_market_secondary(self) -> None:
+        """market=SECONDARY (portal filter): every listing is certainly not primary."""
+        listings, _ = parse_otodom_items(self.raw, self.cfg, "sale", market="SECONDARY")
+        assert listings
+        assert {ls.is_primary_market for ls in listings} == {False}
 
     def test_rent_price_is_admin_fee_for_sale(self) -> None:
         """§6.1 trap 1: rentPrice in SALE listings is admin fee, not rent."""

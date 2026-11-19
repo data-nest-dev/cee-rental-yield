@@ -59,3 +59,9 @@ AUTO_QUOTA_CITY_TARGET = 1500
 
 def auto_district_quota(n_districts: int) -> int:
     return max(AUTO_QUOTA_MIN, math.ceil(AUTO_QUOTA_CITY_TARGET / max(n_districts, 1)))
+
+
+# Portal-side market filter (Otodom pageProps.filteringQueryParams.market). No field on a listing
+# tells the markets apart reliably (CLAUDE.md section 6.1), so SECONDARY is applied by the portal.
+MARKET_ALL = "ALL"
+MARKET_SECONDARY = "SECONDARY"

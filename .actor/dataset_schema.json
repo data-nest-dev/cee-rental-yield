@@ -60,7 +60,7 @@
                     "saleGroupLevel": { "label": "Price compared at", "format": "text" },
                     "rentGroupLevel": { "label": "Rent compared at", "format": "text" },
                     "confidence": { "label": "Confidence", "format": "text" },
-                    "isPrimaryMarket": { "label": "New build", "format": "boolean" },
+                    "isPrimaryMarket": { "label": "New build (if known)", "format": "boolean" },
                     "daysOnMarket": { "label": "Days on market", "format": "number" },
                     "changeType": { "label": "Change", "format": "text" },
                     "priceCutPct": { "label": "Price cut %", "format": "number" },

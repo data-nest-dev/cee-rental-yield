@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from src.config import CITIES
+from src.config import CITIES, MARKET_ALL, MARKET_SECONDARY
 
 MODES = ("yieldReport", "scoreListings", "both")
 SAMPLING_MODES = ("perDistrict", "city")
@@ -52,6 +52,11 @@ class RunInput:
     @property
     def wants_scores(self) -> bool:
         return self.mode in ("scoreListings", "both")
+
+    @property
+    def market(self) -> str:
+        """Portal market filter: ALL, or SECONDARY when new builds are excluded."""
+        return MARKET_ALL if self.include_primary_market else MARKET_SECONDARY
 
     def max_per_district_arg(self) -> int | None:
         """Argument for OtodomSource.fetch_listings: None = city-wide, 0 = automatic quota."""

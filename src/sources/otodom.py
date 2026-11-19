@@ -5,7 +5,14 @@ import logging
 import re
 from datetime import date, datetime
 
-from src.config import CITIES, OTODOM_TRANSACTION_MAP, CityConfig, auto_district_quota
+from src.config import (
+    CITIES,
+    MARKET_ALL,
+    MARKET_SECONDARY,
+    OTODOM_TRANSACTION_MAP,
+    CityConfig,
+    auto_district_quota,
+)
 from src.http import HttpClient
 from src.models import Listing
 
@@ -43,6 +50,7 @@ class OtodomSource:
         sort_by: str = SORT_BY,
         direction: str = SORT_DIRECTION,
         page_limit: int = PAGE_LIMIT,
+        market: str = MARKET_ALL,
     ) -> None:
         self._http = http
         self._build_id: str | None = None
@@ -50,6 +58,7 @@ class OtodomSource:
         self.sort_by = sort_by
         self.direction = direction
         self.page_limit = page_limit
+        self.market = market
 
     async def fetch_listings(
         self,
@@ -156,13 +165,18 @@ class OtodomSource:
         return all_items, stats
 
     def _order_params(self) -> list[str]:
-        return [f"limit={self.page_limit}", f"by={self.sort_by}", f"direction={self.direction}"]
+        return [
+            f"limit={self.page_limit}", f"by={self.sort_by}", f"direction={self.direction}",
+            f"market={self.market}",
+        ]
 
     def _is_ordered(self, page_props: dict) -> bool:
         sorting = page_props.get("sortingOption") or {}
         per_page = page_props.get("data", {}).get("searchAds", {}).get("pagination", {}).get("itemsPerPage")
+        echoed_market = (page_props.get("filteringQueryParams") or {}).get("market")
         return (
-            sorting.get("by") == self.sort_by
+            echoed_market in (None, self.market)
+            and sorting.get("by") == self.sort_by
             and sorting.get("direction") == self.direction
             and per_page == self.page_limit
         )
@@ -344,6 +358,7 @@ def parse_otodom_items(
     raw_items: list[dict],
     city_config: CityConfig,
     transaction: str,
+    market: str = MARKET_ALL,
 ) -> tuple[list[Listing], dict[str, int]]:
     listings: list[Listing] = []
     rejected: dict[str, int] = {}
@@ -448,8 +463,13 @@ def parse_otodom_items(
         floor = FLOOR_MAP.get(floor_str) if floor_str else None
 
         # Primary market
+        # market=SECONDARY is filtered by the portal, so False is certain. Under ALL only
+        # developmentId > 0 is a (partial) signal for True; absence proves nothing -> None.
         dev_id = raw.get("developmentId")
-        is_primary = dev_id is not None and dev_id > 0
+        if market == MARKET_SECONDARY:
+            is_primary: bool | None = False
+        else:
+            is_primary = True if dev_id is not None and dev_id > 0 else None
 
         # Advertiser type
         is_private = raw.get("isPrivateOwner")

@@ -88,7 +88,7 @@ async def fetch_city(http: HttpClient, source: OtodomSource, city_key: str, run_
             return _failed(result, f"{tx}: blocked ({e})")
         except Exception as e:  # network or portal failure after retries; listing content never logged
             return _failed(result, f"{tx}: fetch failed ({type(e).__name__}: {e})")
-        listings, rejected = parse_otodom_items(raw, cfg, tx)
+        listings, rejected = parse_otodom_items(raw, cfg, tx, market=run_input.market)
         cleaned, clean_rejected = clean_listings(listings)
         elapsed = time.monotonic() - t0
         window = http.window(DOMAIN)
@@ -130,7 +130,6 @@ def compute_city(city: CityResult, run_input: RunInput, rates: dict[str, float],
     listings = [
         ls for ls in city.cleaned
         if run_input.area_min <= ls.area_m2 <= run_input.area_max
-        and (run_input.include_primary_market or not ls.is_primary_market)
     ]
     all_rooms = set(run_input.rooms) == set(ROOM_BUCKETS)
 
@@ -295,6 +294,7 @@ async def _run(
     summary["fx"] = {"source": "ECB", "date": fx_date, "eurToPln": rates.get("PLN")}
 
     source = source_factory(http)
+    source.market = run_input.market
     outputs: dict[str, CityOutput] = {}
     for city_key in run_input.cities:
         await actor.status(f"Fetching {CITIES[city_key].display_name}...")
