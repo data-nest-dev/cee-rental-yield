@@ -336,3 +336,17 @@ async def test_first_page_with_wrong_echoed_market_is_refetched_from_next_data()
     })
     items, _ = await OtodomSource(http, market="SECONDARY").fetch_listings("katowice", "sale", 1500)
     assert [it["slug"] for it in items] == ["right"]
+
+
+@pytest.mark.asyncio
+async def test_logs_start_and_progress(caplog) -> None:
+    import logging
+    page1 = [_item("a1", "bogucice")]
+    routes = {f"https://www.otodom.pl/pl/wyniki/sprzedaz/mieszkanie/{CITY}": [(200, _html("B1", page1, 60))]}
+    for n in range(2, 61):
+        routes[f"page={n}&"] = [(200, _json([_item(f"x{n}", "bogucice")], 60))]
+    with caplog.at_level(logging.INFO, logger="src.sources.otodom"):
+        await OtodomSource(FakeHttp(routes)).fetch_listings("katowice", "sale", 100000)
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any(m.startswith("Fetching katowice sale") for m in msgs)
+    assert len([m for m in msgs if m.startswith("Progress katowice sale")]) == 2

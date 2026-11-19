@@ -17,6 +17,7 @@ from src.http import HttpClient
 from src.models import Listing
 
 logger = logging.getLogger(__name__)
+PROGRESS_EVERY = 25
 
 ROOMS_MAP = {
     "ONE": 1, "TWO": 2, "THREE": 3, "FOUR": 4, "FIVE": 5,
@@ -59,6 +60,7 @@ class OtodomSource:
         self.direction = direction
         self.page_limit = page_limit
         self.market = market
+        self._page_calls = 0
 
     async def fetch_listings(
         self,
@@ -71,11 +73,18 @@ class OtodomSource:
         cfg = CITIES[city_key]
         tx = OTODOM_TRANSACTION_MAP[transaction]
         self._http.start_window(DOMAIN, f"{city_key} {transaction}")
+        self._page_calls = 0
+        logger.info(
+            "Fetching %s %s (market=%s, sampling=%s)", city_key, transaction, self.market,
+            "city" if max_per_district is None else "perDistrict",
+        )
         stats = {
             "pages_fetched": 0,
             "raw_items": 0,
             "build_id_refreshes": 0,
             "fallback_to_html": False,
+            "city_key": city_key,
+            "tx": transaction,
         }
 
         page1_items, pagination, build_id, district_names, ordered = await self._fetch_first_page(cfg, tx)
@@ -206,6 +215,20 @@ class OtodomSource:
         )
 
     async def _fetch_page(
+        self, location_path: str, tx: str, page: int, stats: dict,
+    ) -> tuple[list[dict], dict]:
+        result = await self._fetch_page_inner(location_path, tx, page, stats)
+        self._page_calls += 1
+        if self._page_calls % PROGRESS_EVERY == 0:
+            window_of = getattr(self._http, "window", None)
+            window = window_of(DOMAIN) if window_of else None
+            logger.info(
+                "Progress %s %s: %d pages fetched%s", stats.get("city_key", ""), stats.get("tx", ""),
+                self._page_calls, f", {window.blocked} blocked of {window.requests} requests" if window else "",
+            )
+        return result
+
+    async def _fetch_page_inner(
         self, location_path: str, tx: str, page: int, stats: dict,
     ) -> tuple[list[dict], dict]:
         if self._build_id and not self._html_mode:

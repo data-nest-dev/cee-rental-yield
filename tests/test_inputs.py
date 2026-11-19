@@ -84,3 +84,15 @@ def test_max_scored_listings_bounds() -> None:
 @pytest.mark.parametrize("n, quota", [(18, 150), (22, 150), (5, 300), (10, 150), (7, 215), (1, 1500), (0, 1500)])
 def test_auto_district_quota(n: int, quota: int) -> None:
     assert auto_district_quota(n) == quota
+
+
+def test_console_prefill_json_is_recognised_as_prefill_run() -> None:
+    """Exact input the Apify Console sends for the prefill (no `mode`, explicit defaults)."""
+    console = {
+        "cities": ["warszawa"], "includePrimaryMarket": True, "maxListingsPerSide": 360,
+        "onlyNewOrChanged": False,
+        "proxyConfiguration": {"useApifyProxy": True, "apifyProxyGroups": ["BUYPROXIES94952"]},
+        "samplingMode": "city",
+    }
+    assert is_prefill_run(parse_input(console))
+    assert not is_prefill_run(parse_input({}))
