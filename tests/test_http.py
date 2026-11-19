@@ -72,3 +72,54 @@ async def test_below_minimum_requests_does_not_abort() -> None:
         await client.get(URL)  # 9 blocked attempts of 9 requests
     status, _ = await client.get(URL)
     assert status == 200
+
+
+class RecordingSession(FakeSession):
+    def __init__(self, statuses: list[int]) -> None:
+        super().__init__(statuses)
+        self.proxies: list[str | None] = []
+
+    async def get(self, url: str, **kwargs) -> _Resp:
+        self.proxies.append(kwargs.get("proxy"))
+        return await super().get(url, **kwargs)
+
+
+def _proxied_client(statuses: list[int], sessions: int = 5) -> tuple[HttpClient, RecordingSession]:
+    async def proxy_url_for(session_id: str) -> str:
+        return f"http://{session_id}.proxy"
+    client = HttpClient(min_interval=0, proxy_url_for=proxy_url_for, proxy_sessions=sessions)
+    fake = RecordingSession(statuses)
+    client._session = fake
+    return client, fake
+
+
+@pytest.mark.asyncio
+async def test_each_window_starts_on_the_next_session_round_robin() -> None:
+    client, fake = _proxied_client([200] * 6, sessions=3)
+    for label in ("katowice sale", "katowice rent", "warszawa sale", "warszawa rent"):
+        client.start_window(DOMAIN, label)
+        await client.get(URL)
+    assert fake.proxies == ["http://s0.proxy", "http://s1.proxy", "http://s2.proxy", "http://s0.proxy"]
+
+
+@pytest.mark.asyncio
+async def test_block_rotates_to_next_session_before_retry_and_counts_per_session() -> None:
+    client, fake = _proxied_client([403, 200])
+    client.start_window(DOMAIN, "katowice sale")
+    status, _ = await client.get(URL)
+    assert status == 200
+    assert fake.proxies == ["http://s0.proxy", "http://s1.proxy"]
+    w = client.window(DOMAIN)
+    assert (w.requests, w.blocked) == (2, 1)
+    assert w.sessions == {"s0": {"requests": 1, "blocked": 1}, "s1": {"requests": 1, "blocked": 0}}
+
+
+@pytest.mark.asyncio
+async def test_static_proxy_url_still_used_without_provider() -> None:
+    client = HttpClient(min_interval=0, proxy_url="http://static.proxy")
+    fake = RecordingSession([200])
+    client._session = fake
+    client.start_window(DOMAIN, "w")
+    await client.get(URL)
+    assert fake.proxies == ["http://static.proxy"]
+    assert client.window(DOMAIN).sessions == {}
