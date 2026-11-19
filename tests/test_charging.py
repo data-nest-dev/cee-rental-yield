@@ -58,10 +58,20 @@ async def test_zero_budget_never_sends_a_charged_push() -> None:
 
 
 @pytest.mark.asyncio
-async def test_free_records_ignore_the_budget() -> None:
+async def test_free_records_are_unlimited_when_dataset_items_cost_nothing() -> None:
     rec = Recorder()
-    pushed, limit = await push_with_charging(rec, RECORDS[:5], None, is_pay_per_event=True, capacity=lambda e: 0)
+    caps = {None: None, "area-yield": 0}
+    pushed, limit = await push_with_charging(rec, RECORDS[:5], None, is_pay_per_event=True, capacity=caps.get)
     assert (pushed, limit) == (5, False)
+    assert rec.calls == [(5, None)]
+
+
+@pytest.mark.asyncio
+async def test_free_records_are_capped_when_the_synthetic_dataset_item_event_has_a_price() -> None:
+    rec = Recorder()
+    pushed, limit = await push_with_charging(rec, RECORDS[:5], None, is_pay_per_event=True, capacity=lambda e: 2)
+    assert (pushed, limit) == (2, True)
+    assert rec.calls == [(2, None)]
 
 
 @pytest.mark.asyncio

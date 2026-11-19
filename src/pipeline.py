@@ -36,6 +36,8 @@ class ActorPort(Protocol):
     def charged_count(self, event: str) -> int | None: ...
     async def load_state(self, key: str) -> dict: ...
     async def save_state(self, key: str, state: dict) -> None: ...
+    def charging_info(self) -> dict: ...
+    def track(self, summary: dict) -> None: ...
     async def set_value(self, key: str, value: dict) -> None: ...
     async def fail(self, message: str) -> None: ...
     async def status(self, message: str) -> None: ...
@@ -163,6 +165,20 @@ def compute_city(city: CityResult, run_input: RunInput, rates: dict[str, float],
     )
 
 
+async def save_summary(actor: ActorPort, summary: dict, started: float) -> None:
+    summary["finishedAt"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    summary["timeS"] = round(time.monotonic() - started, 1)
+    sides = [side for city in summary["cities"].values() for side in city.get("sides", {}).values()]
+    summary["totals"] = {
+        "requests": sum(side.get("requests", 0) for side in sides),
+        "blocked": sum(side.get("blocked", 0) for side in sides),
+        "bytes": sum(side.get("bytes", 0) for side in sides),
+        "citiesOk": sum(c["status"] == "ok" for c in summary["cities"].values()),
+        "citiesFailed": sum(c["status"] != "ok" for c in summary["cities"].values()),
+    }
+    await actor.set_value("RUN_SUMMARY", summary)
+
+
 def apply_monitoring(
     scored: list[tuple[Listing, dict]], state: dict, as_of: date,
 ) -> tuple[list[tuple[Listing, dict]], list[tuple[Listing, dict]]]:
@@ -213,12 +229,14 @@ async def run(
         "startedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "cities": {},
     }
+    actor.track(summary)
+    summary.update(actor.charging_info())
 
     try:
         run_input = parse_input(raw_input)
     except InputError as e:
         summary.update(status="failed", reason=f"Invalid input: {e}")
-        await actor.set_value("RUN_SUMMARY", summary)
+        await save_summary(actor, summary, started)
         await actor.fail(f"Invalid input: {e}")
         return summary
     http = await http_factory(run_input)
@@ -248,7 +266,7 @@ async def _run(
         rates, fx_date = await rates_loader(http)
     except Exception as e:
         summary.update(status="failed", reason=f"ECB rates unavailable ({type(e).__name__})")
-        await actor.set_value("RUN_SUMMARY", summary)
+        await save_summary(actor, summary, started)
         await actor.fail("ECB exchange rates are unavailable; no results were produced and nothing was charged.")
         return summary
     summary["fx"] = {"source": "ECB", "date": fx_date, "eurToPln": rates.get("PLN")}
@@ -283,26 +301,26 @@ async def _run(
         if not area_records and not scored:
             # A quiet watchlist is a normal result for a scheduled run, not a failure.
             await actor.save_state(run_input.state_key, update_state(state, _price_map(unchanged), as_of))
-            summary.update(status="ok", records={"areaYield": 0, "scoredListing": 0},
-                           timeS=round(time.monotonic() - started, 1))
-            await actor.set_value("RUN_SUMMARY", summary)
+            summary.update(status="ok", records={"areaYield": 0, "scoredListing": 0})
+            await save_summary(actor, summary, started)
             await actor.status("No new or cheaper listings since the last run.")
             return summary
 
     if not area_records and not scored:
         reasons = "; ".join(f"{k}: {v['reason'] or 'no results'}" for k, v in summary["cities"].items())
-        summary.update(status="failed", reason=f"No results ({reasons})", timeS=round(time.monotonic() - started, 1))
-        await actor.set_value("RUN_SUMMARY", summary)
+        summary.update(status="failed", reason=f"No results ({reasons})")
+        await save_summary(actor, summary, started)
         await actor.fail(f"No results were produced and nothing was charged. {reasons}")
         return summary
 
     if run_input.wants_yields:
         await actor.set_value("YIELD_REPORT", {
+            "computedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "fx": summary["fx"],
             "cities": {k: {"groups": out.report_groups, "gate": out.gate} for k, out in outputs.items()},
         })
     summary["status"] = "pushing"
-    await actor.set_value("RUN_SUMMARY", summary)
+    await save_summary(actor, summary, started)
 
     # Free records first so the dataset is never empty; then charged yields; scored listings arrive best deals first.
     free_area = [r for r in area_records if r["confidence"] not in CHARGED_CONFIDENCE]
@@ -331,12 +349,11 @@ async def _run(
             SCORED_LISTING_EVENT: {"chargeable": len(scored_records), "pushed": pushed_scored,
                                    "charged": actor.charged_count(SCORED_LISTING_EVENT)},
         },
-        timeS=round(time.monotonic() - started, 1),
     )
     if limit_reached:
         summary["note"] = (f"Stopped at the run's maximum charge: {pushed_area} of {len(charged_area)} yield groups "
                            f"and {pushed_scored} of {len(scored_records)} scored listings were delivered (best deals first).")
-    await actor.set_value("RUN_SUMMARY", summary)
+    await save_summary(actor, summary, started)
     message = f"{len(outputs)} cities, {pushed_free + pushed_area} yield groups, {pushed_scored} scored listings"
     if limit_reached:
         message = f"Stopped at your maximum charge. {message}"

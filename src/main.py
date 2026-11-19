@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import logging
+import math
+from decimal import Decimal
 
-from apify import Actor
+from apify import Actor, Event
 
-from src.charging import push_with_charging
+from src.charging import DEFAULT_DATASET_ITEM_EVENT, push_with_charging
 from src.http import HttpClient
 from src.inputs import RunInput
 from src.monitor import STATE_STORE
@@ -15,6 +17,20 @@ logger = logging.getLogger(__name__)
 
 class ApifyActorPort:
     """Adapts apify.Actor to the pipeline's ActorPort."""
+
+    def __init__(self) -> None:
+        self.summary: dict | None = None
+
+    def track(self, summary: dict) -> None:
+        self.summary = summary
+
+    def charging_info(self) -> dict:
+        charging = Actor.get_charging_manager()
+        max_usd = charging.get_max_total_charge_usd()  # Decimal('inf') when the run has no limit
+        return {
+            "isPayPerEvent": charging.get_pricing_info().is_pay_per_event,
+            "maxChargeUsd": None if max_usd.is_infinite() else float(max_usd),
+        }
 
     async def push(self, records: list[dict], event: str | None) -> tuple[int, bool]:
         if not records:
@@ -31,8 +47,24 @@ class ApifyActorPort:
         return await push_with_charging(
             pusher, records, event,
             is_pay_per_event=charging.get_pricing_info().is_pay_per_event,
-            capacity=charging.calculate_max_event_charge_count_within_limit,
+            capacity=self.capacity,
         )
+
+    def capacity(self, event: str | None) -> int | None:
+        """Records affordable within the run's max charge, counting the synthetic dataset-item price too."""
+        charging = Actor.get_charging_manager()
+        max_usd = charging.get_max_total_charge_usd()
+        if max_usd.is_infinite():
+            return None
+        prices = charging.get_pricing_info().per_event_prices
+        # Same rule as the SDK for events without a configured price: free on the platform, $1 in local tests.
+        unknown = Decimal(0) if Actor.is_at_home() else Decimal(1)
+        per_item = prices.get(DEFAULT_DATASET_ITEM_EVENT, unknown)
+        if event is not None:
+            per_item += prices.get(event, unknown)
+        if not per_item:
+            return None
+        return max(0, math.floor((max_usd - charging.calculate_total_charged_amount()) / per_item))
 
     def charged_count(self, event: str) -> int | None:
         charging = Actor.get_charging_manager()
@@ -72,5 +104,14 @@ async def make_http(run_input: RunInput) -> HttpClient:
 
 async def main() -> None:
     async with Actor:
+        port = ApifyActorPort()
+
+        async def on_aborting(*_args: object) -> None:
+            # The platform force-stops 30 s after ABORTING; keep what is known so far.
+            if port.summary is not None:
+                port.summary["aborted"] = True
+                await Actor.set_value("RUN_SUMMARY", port.summary)
+
+        Actor.on(Event.ABORTING, on_aborting)
         raw_input = await Actor.get_input() or {}
-        await run(ApifyActorPort(), raw_input, http_factory=make_http)
+        await run(port, raw_input, http_factory=make_http)

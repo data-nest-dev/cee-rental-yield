@@ -28,6 +28,8 @@ class FakeActor:
         self.statuses: list[str] = []
         self.capacity = capacity  # remaining chargeable count per event; None = not pay-per-event
         self.state: dict[str, dict] = {}
+        self.max_charge: float | None = None
+        self.tracked: dict | None = None
 
     async def push(self, records: list[dict], event: str | None) -> tuple[int, bool]:
         async def pusher(batch: list[dict], charged_event: str | None) -> int:
@@ -38,11 +40,17 @@ class FakeActor:
         return await push_with_charging(
             pusher, records, event,
             is_pay_per_event=self.capacity is not None,
-            capacity=lambda e: None if self.capacity is None else self.capacity.get(e),
+            capacity=lambda e: None if self.capacity is None or e is None else self.capacity.get(e),
         )
 
     def charged_count(self, event: str) -> int | None:
         return None
+
+    def charging_info(self) -> dict:
+        return {"isPayPerEvent": self.capacity is not None, "maxChargeUsd": self.max_charge}
+
+    def track(self, summary: dict) -> None:
+        self.tracked = summary
 
     async def load_state(self, key: str) -> dict:
         return copy.deepcopy(self.state.get(key, {}))
@@ -270,3 +278,28 @@ def test_scored_listing_without_monitoring_has_null_change_fields() -> None:
     actor, _, _ = asyncio.run(_run({"cities": ["katowice"], "mode": "scoreListings"}))
     rec = actor.records("scoredListing")[0]
     assert (rec["changeType"], rec["priceCutPct"], rec["firstSeenAt"]) == (None, None, None)
+
+
+@pytest.mark.asyncio
+async def test_run_summary_has_charging_context_totals_and_side_fields() -> None:
+    actor, _, summary = await _run({"cities": ["katowice"]})
+    stored = actor.kv["RUN_SUMMARY"]
+    assert actor.tracked is summary
+    assert stored["isPayPerEvent"] is False and stored["maxChargeUsd"] is None
+    assert {"startedAt", "finishedAt", "timeS", "fx", "input", "events", "records", "totals"} <= set(stored)
+    side = stored["cities"]["katowice"]["sides"]["sale"]
+    for key in ("pages", "rawItems", "cleanedItems", "rejected", "primaryMarketProjects", "requests", "blocked",
+                "blockedPct", "bytes", "timeS", "sample", "proxySessions", "buildIdRefreshes", "fallbackToHtml"):
+        assert key in side, key
+    assert {"medianAgeDays", "oldestListingDays", "share"} <= set(side["sample"])
+    assert side["primaryMarketProjects"] == 8
+    assert stored["totals"]["citiesOk"] == 1
+    assert {"computedAt", "fx", "cities"} <= set(actor.kv["YIELD_REPORT"])
+
+
+@pytest.mark.asyncio
+async def test_failed_run_summary_is_stamped_too() -> None:
+    actor, _, _ = await _run({"cities": ["warszawa"]}, FakeSource(blocked={"warszawa"}))
+    stored = actor.kv["RUN_SUMMARY"]
+    assert stored["status"] == "failed" and "finishedAt" in stored
+    assert stored["totals"]["citiesFailed"] == 1
