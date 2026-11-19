@@ -29,7 +29,7 @@ Repo: `https://github.com/data-nest-dev/cee-rental-yield` · Właściciel: datan
     4. (J9) Gdy jedna strona rynku miasta zawiedzie (blokada / błąd), całe miasto jest pomijane z powodem w `RUN_SUMMARY`; pozostałe miasta idą dalej. *(Potwierdzone przez właściciela 2026-11-19: to jego decyzja z 2026-11-18.)*
     5. (J10) `rooms` jako enum tekstowy `["1","2","3","4+"]` (edytor multi-select); API przyjmuje też liczby 1–4. *(Potwierdzone przez właściciela 2026-11-19.)*
     6. Akceptacja: prefill ≠ default, cichy run monitoringu = Succeeded, brak `flatten` w widokach w M3 (wraca w M4).
-    7. `USD_PER_COMPUTE_UNIT` zostaje $0,40 do testu H (cennik Apify podaje dziś $0,20/CU dla Free/Starter; kalibracja z rachunku).
+    7. *(Zastąpione decyzją 14.8: kalibracja z rachunku Run 2.)* `USD_PER_COMPUTE_UNIT` zostawał $0,40 do testu H.
 12. **Raporty i limit (poprawki 2026-11-19):** przed push tylko wstępny `RUN_SUMMARY` (liczniki, bez wartości yield i cen); `YIELD_REPORT` po każdej wypchniętej partii, wyłącznie z wypchniętymi grupami (w `scoreListings`: tylko darmowe `low`); handler `ABORTING` zapisuje to, co wypchnięto. Pojemność budżetu liczona tak, by suma opłat była **ściśle poniżej** limitu: dokumentacja PPE: „Once it's reached, `Actor.charge()` stop charging and `Actor.pushData()` stops pushing data over the limit. The platform then aborts the run automatically.” — nigdy nie dochodzimy do limitu, więc run kończy się normalnie (Succeeded). Darmowe rekordy idą przed płatnymi. `RUN_SUMMARY`: `scoredAvailable`, `scoredReturned`, `prefillRun`.
 13. **Tożsamość git (załatwione 2026-11-19):** lokalny `git config` repo: `data-nest-dev <contact@datanest.dev>`. Autor i committer wszystkich commitów `main` i `m3` przepisani na tę tożsamość (`git filter-repo`), `main` i `m3` wypchnięte `--force-with-lease`; w historii nie ma imienia, nazwiska ani nazwy hosta (jedyne wystąpienie, linia tego punktu w CLAUDE.md, zastąpiono przy przepisywaniu). Lokalne kopie: `main-backup-identity`, `m3-backup-identity`, `m3-backup-identity-v2` — nie wypychać. Stare commity PR #1 zostają w `refs/pull/1/head` i w gałęzi `origin/latest-72` (decyzja właściciela: bez działania).
 
@@ -41,6 +41,8 @@ Repo: `https://github.com/data-nest-dev/cee-rental-yield` · Właściciel: datan
     5. `scoredListing.flags` (lista): `share`, `auction` — oferta wykluczona z median i z wyniku (liczniki `rejected.share_listing`, `rejected.auction_listing`); `needsRenovation` — zostaje w wyniku i medianie, z flagą; `outlier` (rabat > 40% względem mediany grupy; jeden warunek) — tylko flaga. `title` służy wyłącznie do klasyfikacji w pamięci (`src/flags.py`), nigdy do wyniku ani logów. Słownik słów kluczowych wstępny; poprawki po przeglądzie top 15 przez właściciela.
     5a. `share` tylko dla udziału we własności lokalu („udział w mieszkaniu/lokalu”, „1/2 udziału”, „sprzedam udział”; ułamki tylko obok słowa udział/własności); frazy garażowe i gruntowe jawnie wykluczone. `RUN_SUMMARY.cities.*.sides.rent.nearDuplicateRentShare` = odrzucone `near_duplicate_rent` / pobrane; > 15% na żywych danych zgłaszać.
     5b. `outputCurrency` usunięte (input, kod, README): wynik zawsze ma EUR i walutę lokalną.
+    8. **Test H zaliczony (2026-11-19, datacenter `BUYPROXIES94952`).** Run 0 (prefill): Succeeded, ~20 s. Run 1 (domyślny, 512 MB): 268 s, 2/215 blokad (Kraków/sprzedaż, sesje s2 i s3 na pierwszym zapytaniu), szczyt pamięci 133,7 MB. Run 2 (domyślny, 256 MB): 342 s (1,45 s/zapytanie), 124 MB, koszt $0,012 (compute 0,0238 CU = $0,005; 1109 zapisów datasetu = $0,006; 20 zapisów KV = $0,001; transfer i proxy $0). **Pamięć domyślna zostaje 512 MB (decyzja właściciela).**
+    9. **Model kosztu autora (`src/budget.py`, kalibracja z Run 2, zaakceptowana):** `CU × $0,21 + rekordy × $0,0000054 + 20 zapisów KV × $0,00005`; `SECONDS_PER_REQUEST` 1,19 przy ≥ 512 MB i 1,45 poniżej. Szacunek Run 2 $0,0125 (zmierzone $0,012). Progi `minMaxChargeUsd`: domyślne 512 MB $0,0304, 256 MB $0,0235, prefill 512 MB $0,0087 (zastępuje progi z decyzji 10: $0,029 / $0,0053). `FIXED_SECONDS` (30), zapytania na dzielnicę (60) i `BYTES_PER_REQUEST` bez zmian do ≥ 3 runów.
     6. Brief M3 nie jest już prowadzony jako artifact: decyzje w CLAUDE.md, raporty w czacie.
     7. Test limitu kosztu na platformie niepotrzebny: pokrywa go lokalny test integracyjny (`tests/test_integration_sdk.py`, decyzja z 2026-11-18).
 
@@ -579,7 +581,7 @@ Dodatkowo w Apify: trzy „examples” (zapisane zadania z gotowym wejściem): �
 - [x] ręczna weryfikacja 20 ofert (PL) — zaliczona przez właściciela (cena, metraż, pokoje, dzielnica)
 
 **M3 — Actor (weekend 3)** — plan w briefie M3, czeka na akceptację
-- [x] `main.py` (orkiestracja) i pełny `RUN_SUMMARY` (przeniesione z M2) — gałąź `m3`, test H jeszcze nie
+- [x] `main.py` (orkiestracja) i pełny `RUN_SUMMARY` (przeniesione z M2) — gałąź `m3`, test H zaliczony (§0 decyzja 14.8)
 - [ ] `input_schema.json`, `dataset_schema.json`, `actor.json`, `Dockerfile`
 - [ ] naliczanie zdarzeń + limit kosztu + $0 przy porażce
 - [ ] monitoring (`monitor.py`) z testem
