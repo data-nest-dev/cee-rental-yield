@@ -7,6 +7,9 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Protocol
 
+from src.budget import (
+    BUDGET_WARNING, estimate_author_cost_usd, min_max_charge_usd, needs_budget_mode, reduced_input,
+)
 from src.charging import AREA_YIELD_EVENT, CHARGED_CONFIDENCE, SCORED_LISTING_EVENT
 from src.clean import clean_listings
 from src.config import CITIES
@@ -239,6 +242,24 @@ async def run(
         await save_summary(actor, summary, started)
         await actor.fail(f"Invalid input: {e}")
         return summary
+    memory_mb = summary.get("memoryMbytes")
+    requested_cost = estimate_author_cost_usd(run_input, memory_mb)
+    summary.update(
+        budgetReduced=False,
+        estimatedAuthorCostUsd=round(requested_cost, 4),
+        minMaxChargeUsd=round(min_max_charge_usd(run_input, memory_mb), 4),
+    )
+    if needs_budget_mode(summary.get("isPayPerEvent", False), summary.get("maxChargeUsd"), requested_cost):
+        # Author pays the platform cost; a run must not cost the author more than it can earn.
+        run_input = reduced_input(run_input)
+        summary.update(
+            budgetReduced=True,
+            requestedScopeCostUsd=round(requested_cost, 4),
+            estimatedAuthorCostUsd=round(estimate_author_cost_usd(run_input, memory_mb), 4),
+        )
+        logger.warning(BUDGET_WARNING)
+        await actor.status(BUDGET_WARNING)
+
     http = await http_factory(run_input)
     try:
         return await _run(actor, run_input, summary, started, http, source_factory, rates_loader, as_of)
@@ -355,6 +376,8 @@ async def _run(
                            f"and {pushed_scored} of {len(scored_records)} scored listings were delivered (best deals first).")
     await save_summary(actor, summary, started)
     message = f"{len(outputs)} cities, {pushed_free + pushed_area} yield groups, {pushed_scored} scored listings"
+    if summary.get("budgetReduced"):
+        message = f"Reduced sample (max charge too low for the requested scope). {message}"
     if limit_reached:
         message = f"Stopped at your maximum charge. {message}"
     if failed:

@@ -114,6 +114,8 @@ Example from a test run (November 2026): Warsaw and Kraków with default setting
 
 To spend less: `mode: "yieldReport"` returns only the yield groups (about $2 for Warsaw and Kraków); `minScore` and `rooms` reduce the number of scored listings; and you can set a maximum charge per run. When that maximum is reached the run stops cleanly after delivering the yield groups and the best-scored listings first.
 
+**Very low maximum charge.** The Actor collects the whole sample before it returns any result. If your maximum charge per run is too low to justify that (below about $0.03 with default settings), the run uses a smaller sample instead: the first city in your list, the 360 newest listings for sale and for rent, whole-city comparison. The run still succeeds and returns what your limit covers, and `RUN_SUMMARY` shows `budgetReduced: true`. **Recommended minimum for the default run: $0.05** (with the residential proxy: $2).
+
 ## Limitations
 
 - **Asking prices, not transaction prices.** Gross yield, not net (no taxes, vacancy, maintenance).

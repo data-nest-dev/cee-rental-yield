@@ -34,7 +34,7 @@ class FakeActor:
     async def push(self, records: list[dict], event: str | None) -> tuple[int, bool]:
         async def pusher(batch: list[dict], charged_event: str | None) -> int:
             self.pushed.append((charged_event, list(batch)))
-            if charged_event is not None and self.capacity is not None:
+            if charged_event is not None and self.capacity is not None and charged_event in self.capacity:
                 self.capacity[charged_event] -= len(batch)
             return len(batch)
         return await push_with_charging(
@@ -47,7 +47,7 @@ class FakeActor:
         return None
 
     def charging_info(self) -> dict:
-        return {"isPayPerEvent": self.capacity is not None, "maxChargeUsd": self.max_charge}
+        return {"isPayPerEvent": self.capacity is not None, "maxChargeUsd": self.max_charge, "memoryMbytes": 512}
 
     def track(self, summary: dict) -> None:
         self.tracked = summary
@@ -314,3 +314,48 @@ def test_dataset_views_reference_fields_the_records_actually_have() -> None:
         present = set().union(*(r.keys() for r in actor.records(record_type)))
         assert set(fields) <= present, (view, set(fields) - present)
         assert set(schema["views"][view]["display"]["properties"]) == set(fields)
+
+
+@pytest.mark.asyncio
+async def test_budget_mode_a_tiny_max_charge_runs_one_city_in_city_mode_and_succeeds() -> None:
+    actor = FakeActor(capacity={"area-yield": 0, "scored-listing": 2})  # what $0.01 affords
+    actor.max_charge = 0.01
+    actor, source, summary = await _run({"cities": ["warszawa", "krakow"]}, actor=actor)
+
+    assert actor.failed is None
+    assert summary["budgetReduced"] is True and summary["maxChargeUsd"] == 0.01
+    assert summary["estimatedAuthorCostUsd"] < summary["requestedScopeCostUsd"]
+    assert source.calls == [("warszawa", "sale", 360, None), ("warszawa", "rent", 360, None)]
+    assert summary["input"]["samplingMode"] == "city" and summary["input"]["cities"] == ["warszawa"]
+    assert actor.records("areaYield") or actor.records("scoredListing")   # non-empty dataset
+    assert any("Max charge too low" in s for s in actor.statuses)
+
+
+@pytest.mark.asyncio
+async def test_budget_mode_keeps_dataset_non_empty_even_for_score_only_input() -> None:
+    actor = FakeActor(capacity={"area-yield": 0, "scored-listing": 0})
+    actor.max_charge = 0.001
+    actor, _, summary = await _run({"cities": ["katowice"], "mode": "scoreListings"}, actor=actor)
+    assert actor.failed is None and summary["budgetReduced"] is True
+    assert actor.records("areaYield")  # free city-level context
+
+
+@pytest.mark.parametrize("ppe, max_charge", [(False, 0.01), (True, None)])
+@pytest.mark.asyncio
+async def test_budget_mode_b_no_limit_or_not_pay_per_event_is_not_reduced(ppe: bool, max_charge) -> None:
+    actor = FakeActor(capacity={} if ppe else None)
+    actor.max_charge = max_charge
+    actor, source, summary = await _run({"cities": ["warszawa", "krakow"]}, actor=actor)
+    assert summary["budgetReduced"] is False
+    assert [c[0] for c in source.calls] == ["warszawa", "warszawa", "krakow", "krakow"]
+    assert source.calls[0][3] == 0  # per-district, automatic quota
+
+
+@pytest.mark.asyncio
+async def test_budget_mode_c_sufficient_limit_is_not_reduced() -> None:
+    actor = FakeActor(capacity={})
+    actor.max_charge = 50.0
+    actor, source, summary = await _run({"cities": ["warszawa", "krakow"]}, actor=actor)
+    assert summary["budgetReduced"] is False
+    assert summary["minMaxChargeUsd"] < 50.0
+    assert len(source.calls) == 4

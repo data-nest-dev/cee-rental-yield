@@ -30,6 +30,7 @@ class ApifyActorPort:
         return {
             "isPayPerEvent": charging.get_pricing_info().is_pay_per_event,
             "maxChargeUsd": None if max_usd.is_infinite() else float(max_usd),
+            "memoryMbytes": Actor.configuration.memory_mbytes,  # ACTOR_MEMORY_MBYTES; None locally
         }
 
     async def push(self, records: list[dict], event: str | None) -> tuple[int, bool]:
