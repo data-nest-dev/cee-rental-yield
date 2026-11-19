@@ -35,12 +35,12 @@ SIDES = ("sale", "rent")
 class ActorPort(Protocol):
     """What the pipeline needs from the platform; main.py adapts apify.Actor, tests use a fake."""
 
-    async def push(self, records: list[dict], event: str | None) -> tuple[int, bool]: ...
+    async def push(self, records: list[dict], event: str | None, on_pushed=None) -> tuple[int, bool]: ...
     def charged_count(self, event: str) -> int | None: ...
     async def load_state(self, key: str) -> dict: ...
     async def save_state(self, key: str, state: dict) -> None: ...
     def charging_info(self) -> dict: ...
-    def track(self, summary: dict) -> None: ...
+    def track(self, summary: dict, yield_report: dict | None = None) -> None: ...
     async def set_value(self, key: str, value: dict) -> None: ...
     async def fail(self, message: str) -> None: ...
     async def status(self, message: str) -> None: ...
@@ -134,14 +134,14 @@ def compute_city(city: CityResult, run_input: RunInput, rates: dict[str, float],
     ]
     all_rooms = set(run_input.rooms) == set(ROOM_BUCKETS)
 
+    # Groups are computed in every mode: free city context and YIELD_REPORT need them in scoreListings too.
     area_records: list[dict] = []
     report_groups: list[dict] = []
-    if run_input.wants_yields:
-        for g in compute_groups(listings, run_input.min_sale_sample, run_input.min_rent_sample):
-            rec = build_area_yield(g, rates, fx_date, SOURCE_NAMES, sample=area_sample(g, as_of, city.coverage))
-            report_groups.append(rec)
-            if g.rooms_bucket == "all" or g.rooms_bucket in run_input.rooms:
-                area_records.append(rec)
+    for g in compute_groups(listings, run_input.min_sale_sample, run_input.min_rent_sample):
+        rec = build_area_yield(g, rates, fx_date, SOURCE_NAMES, sample=area_sample(g, as_of, city.coverage))
+        report_groups.append(rec)
+        if g.rooms_bucket == "all" or g.rooms_bucket in run_input.rooms:
+            area_records.append(rec)
 
     scored: list[tuple[Listing, dict]] = []
     if run_input.wants_scores:
@@ -290,7 +290,7 @@ async def _run(
     except Exception as e:
         summary.update(status="failed", reason=f"ECB rates unavailable ({type(e).__name__})")
         await save_summary(actor, summary, started)
-        await actor.fail("ECB exchange rates are unavailable; no results were produced and nothing was charged.")
+        await actor.fail("ECB exchange rates are unavailable; no results were produced and no result events were charged.")
         return summary
     summary["fx"] = {"source": "ECB", "date": fx_date, "eurToPln": rates.get("PLN")}
 
@@ -307,7 +307,15 @@ async def _run(
         outputs[city_key] = out
         city_summary.update(gate=out.gate, groupsInfo=out.groups_info)
 
-    area_records = [rec for out in outputs.values() for rec in out.area_records]
+    # Groups are always computed; which of them reach the dataset depends on mode (and budget mode).
+    all_groups = [rec for out in outputs.values() for rec in out.area_records]
+    free_groups = [r for r in all_groups if r["confidence"] not in CHARGED_CONFIDENCE]
+    if run_input.wants_yields:
+        free_area, charged_area = free_groups, [r for r in all_groups if r["confidence"] in CHARGED_CONFIDENCE]
+    else:
+        # scoreListings: never charge area-yield; budget mode may add free city-level context to the dataset.
+        free_area, charged_area = (free_groups if summary.get("budgetReduced") else []), []
+    report_only_groups = [] if run_input.wants_yields or free_area else free_groups
     scored = sort_scored([item for out in outputs.values() for item in out.scored], run_input.output_currency)
 
     state: dict | None = None
@@ -321,10 +329,11 @@ async def _run(
             "priceCut": sum(rec["changeType"] == "priceCut" for _, rec in scored),
             "unchanged": len(unchanged),
         }
-        if not area_records and not scored:
+        if not free_area and not charged_area and not scored:
             # A quiet watchlist is a normal result for a scheduled run, not a failure.
             await actor.save_state(run_input.state_key, update_state(state, _price_map(unchanged), as_of))
-            summary.update(status="ok", records={"areaYield": 0, "scoredListing": 0})
+            summary.update(status="ok", records={"areaYield": 0, "scoredListing": 0},
+                           scoredAvailable=0, scoredReturned=0)
             await save_summary(actor, summary, started)
             await actor.status("No new or cheaper listings since the last run.")
             return summary
@@ -335,33 +344,51 @@ async def _run(
         scored = scored[:run_input.max_scored_listings]
     summary["scoredAvailable"] = scored_available
 
-    if not area_records and not scored:
+    if not free_area and not charged_area and not scored:
         reasons = "; ".join(f"{k}: {v['reason'] or 'no results'}" for k, v in summary["cities"].items())
         summary.update(status="failed", reason=f"No results ({reasons})")
         await save_summary(actor, summary, started)
-        await actor.fail(f"No results were produced and nothing was charged. {reasons}")
+        await actor.fail(f"No results were produced; no result events were charged. {reasons}")
         return summary
 
-    if run_input.wants_yields:
-        await actor.set_value("YIELD_REPORT", {
-            "computedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "fx": summary["fx"],
-            "cities": {k: {"groups": out.report_groups, "gate": out.gate} for k, out in outputs.items()},
-        })
-    summary["status"] = "pushing"
+    # Preliminary summary: counts only, no yield values or prices, so nothing paid leaks before it is charged.
+    summary.update(status="pushing", records={"areaYield": 0, "scoredListing": 0})
     await save_summary(actor, summary, started)
 
-    # Free records first so the dataset is never empty; then charged yields; scored listings arrive best deals first.
-    free_area = [r for r in area_records if r["confidence"] not in CHARGED_CONFIDENCE]
-    charged_area = [r for r in area_records if r["confidence"] in CHARGED_CONFIDENCE]
+    gates = {out_name: out.gate for out_name, out in ((CITIES[k].display_name, o) for k, o in outputs.items())}
+    pushed_groups: list[dict] = []
+    yield_report = {"computedAt": None, "fx": summary["fx"], "cities": {}}
+    actor.track(summary, yield_report)
+
+    async def refresh_reports() -> None:
+        # YIELD_REPORT holds only groups already delivered (plus free context in scoreListings mode).
+        yield_report["computedAt"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        yield_report["cities"] = {
+            name: {"groups": [g for g in pushed_groups + report_only_groups if g["city"] == name], "gate": gate}
+            for name, gate in gates.items()
+        }
+        await actor.set_value("YIELD_REPORT", yield_report)
+
+    async def on_groups(batch: list[dict]) -> None:
+        pushed_groups.extend(batch)
+        summary["records"]["areaYield"] += len(batch)
+        await refresh_reports()
+        await save_summary(actor, summary, started)
+
+    async def on_scored(batch: list[dict]) -> None:
+        summary["records"]["scoredListing"] += len(batch)
+        await save_summary(actor, summary, started)
+
+    # Order: free context first (never lost, never charged), then charged yields, then best deals first.
+    await refresh_reports()
+    pushed_free, free_limit = await actor.push(free_area, None, on_groups)
+    pushed_area, area_limit = await actor.push(charged_area, AREA_YIELD_EVENT, on_groups)
     scored_records = [rec for _, rec in scored]
-    pushed_free, _ = await actor.push(free_area, None)
-    pushed_area, area_limit = await actor.push(charged_area, AREA_YIELD_EVENT)
-    pushed_scored, scored_limit = await actor.push(scored_records, SCORED_LISTING_EVENT)
-    limit_reached = area_limit or scored_limit
+    pushed_scored, scored_limit = await actor.push(scored_records, SCORED_LISTING_EVENT, on_scored)
+    limit_reached = free_limit or area_limit or scored_limit
 
     if state is not None:
-        # Listings held back by the cost limit stay unseen, so the next run still delivers them.
+        # Listings held back by the cost limit or the cap stay unseen, so the next run still delivers them.
         observed = scored[:pushed_scored] + unchanged
         new_state = update_state(state, _price_map(observed), as_of)
         await actor.save_state(run_input.state_key, new_state)
@@ -381,7 +408,7 @@ async def _run(
         },
     )
     if limit_reached:
-        summary["note"] = (f"Stopped at the run's maximum charge: {pushed_area} of {len(charged_area)} yield groups "
+        summary["note"] = (f"Stopped below the run's maximum charge: {pushed_area} of {len(charged_area)} yield groups "
                            f"and {pushed_scored} of {len(scored_records)} scored listings were delivered (best deals first).")
     await save_summary(actor, summary, started)
     message = f"{len(outputs)} cities, {pushed_free + pushed_area} yield groups, {pushed_scored} scored listings"

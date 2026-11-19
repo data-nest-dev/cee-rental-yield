@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import logging
-import math
 from decimal import Decimal
 
 from apify import Actor, Event
 
-from src.charging import DEFAULT_DATASET_ITEM_EVENT, push_with_charging
+from src.charging import DEFAULT_DATASET_ITEM_EVENT, affordable_count, push_with_charging
 from src.http import HttpClient
 from src.inputs import RunInput
 from src.monitor import STATE_STORE
@@ -20,9 +19,12 @@ class ApifyActorPort:
 
     def __init__(self) -> None:
         self.summary: dict | None = None
+        self.yield_report: dict | None = None
 
-    def track(self, summary: dict) -> None:
+    def track(self, summary: dict, yield_report: dict | None = None) -> None:
         self.summary = summary
+        if yield_report is not None:
+            self.yield_report = yield_report
 
     def charging_info(self) -> dict:
         charging = Actor.get_charging_manager()
@@ -33,7 +35,7 @@ class ApifyActorPort:
             "memoryMbytes": Actor.configuration.memory_mbytes,  # ACTOR_MEMORY_MBYTES; None locally
         }
 
-    async def push(self, records: list[dict], event: str | None) -> tuple[int, bool]:
+    async def push(self, records: list[dict], event: str | None, on_pushed=None) -> tuple[int, bool]:
         if not records:
             return 0, False
         charging = Actor.get_charging_manager()
@@ -49,6 +51,7 @@ class ApifyActorPort:
             pusher, records, event,
             is_pay_per_event=charging.get_pricing_info().is_pay_per_event,
             capacity=self.capacity,
+            on_pushed=on_pushed,
         )
 
     def capacity(self, event: str | None) -> int | None:
@@ -63,9 +66,7 @@ class ApifyActorPort:
         per_item = prices.get(DEFAULT_DATASET_ITEM_EVENT, unknown)
         if event is not None:
             per_item += prices.get(event, unknown)
-        if not per_item:
-            return None
-        return max(0, math.floor((max_usd - charging.calculate_total_charged_amount()) / per_item))
+        return affordable_count(max_usd, charging.calculate_total_charged_amount(), per_item)
 
     def charged_count(self, event: str) -> int | None:
         charging = Actor.get_charging_manager()
@@ -112,6 +113,8 @@ async def main() -> None:
             if port.summary is not None:
                 port.summary["aborted"] = True
                 await Actor.set_value("RUN_SUMMARY", port.summary)
+            if port.yield_report is not None:  # only groups already pushed
+                await Actor.set_value("YIELD_REPORT", port.yield_report)
 
         Actor.on(Event.ABORTING, on_aborting)
         raw_input = await Actor.get_input() or {}

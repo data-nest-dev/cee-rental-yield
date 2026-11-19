@@ -79,3 +79,24 @@ async def test_sdk_charging_fewer_than_sent_counts_as_limit() -> None:
     rec = Recorder(charge_ratio=0.5)
     pushed, limit = await push_with_charging(rec, RECORDS, "scored-listing", is_pay_per_event=True, capacity=lambda e: None)
     assert (pushed, limit) == (50, True)
+
+
+from decimal import Decimal
+
+from src.charging import affordable_count
+
+
+@pytest.mark.parametrize("max_usd, charged, price, expected", [
+    ("0.01", "0.00005", "0.004", 2),       # 2 x 0.004 = 0.008 < 0.00995 remaining
+    ("0.02", "0", "0.02", 0),              # one item would land exactly on the limit -> not allowed
+    ("0.04", "0", "0.02", 1),              # two would reach it; one stays below
+    ("0.05", "0", "0.02", 2),
+    ("0.01", "0.02", "0.004", 0),          # already over
+])
+def test_affordable_count_stays_strictly_below_the_limit(max_usd, charged, price, expected) -> None:
+    assert affordable_count(Decimal(max_usd), Decimal(charged), Decimal(price)) == expected
+
+
+def test_affordable_count_unlimited_or_free() -> None:
+    assert affordable_count(Decimal("inf"), Decimal(0), Decimal("0.004")) is None
+    assert affordable_count(Decimal("0.01"), Decimal(0), Decimal(0)) is None

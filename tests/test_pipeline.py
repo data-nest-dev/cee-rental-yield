@@ -31,7 +31,7 @@ class FakeActor:
         self.max_charge: float | None = None
         self.tracked: dict | None = None
 
-    async def push(self, records: list[dict], event: str | None) -> tuple[int, bool]:
+    async def push(self, records: list[dict], event: str | None, on_pushed=None) -> tuple[int, bool]:
         async def pusher(batch: list[dict], charged_event: str | None) -> int:
             self.pushed.append((charged_event, list(batch)))
             if charged_event is not None and self.capacity is not None and charged_event in self.capacity:
@@ -41,6 +41,7 @@ class FakeActor:
             pusher, records, event,
             is_pay_per_event=self.capacity is not None,
             capacity=lambda e: None if self.capacity is None or e is None else self.capacity.get(e),
+            on_pushed=on_pushed,
         )
 
     def charged_count(self, event: str) -> int | None:
@@ -49,8 +50,9 @@ class FakeActor:
     def charging_info(self) -> dict:
         return {"isPayPerEvent": self.capacity is not None, "maxChargeUsd": self.max_charge, "memoryMbytes": 512}
 
-    def track(self, summary: dict) -> None:
+    def track(self, summary: dict, yield_report: dict | None = None) -> None:
         self.tracked = summary
+        self.tracked_report = yield_report
 
     async def load_state(self, key: str) -> dict:
         return copy.deepcopy(self.state.get(key, {}))
@@ -72,10 +74,12 @@ class FakeActor:
 
 
 class FakeSource:
-    def __init__(self, blocked: set[str] = frozenset(), empty: set[str] = frozenset(), mutate=None) -> None:
+    def __init__(self, blocked: set[str] = frozenset(), empty: set[str] = frozenset(), mutate=None,
+                 replicate: int = 1) -> None:
         self.blocked = blocked
         self.empty = empty
         self.mutate = mutate
+        self.replicate = replicate
         self.calls: list[tuple[str, str, int, int | None]] = []
 
     async def fetch_listings(self, city_key, transaction, max_listings, max_per_district=None):
@@ -83,6 +87,15 @@ class FakeSource:
         if city_key in self.blocked:
             raise BlockedError(f"www.otodom.pl blocked 9 of 11 requests ({city_key} {transaction})")
         items = [] if city_key in self.empty else copy.deepcopy(ITEMS[transaction])
+        if self.replicate > 1:
+            # more listings per group, so charged district/room groups exist (unique slugs, same data)
+            base = items
+            items = []
+            for n in range(self.replicate):
+                for it in copy.deepcopy(base):
+                    it["slug"] = f"{it.get('slug')}-r{n}"
+                    it["id"] = f"{it.get('id')}{n}"
+                    items.append(it)
         if self.mutate:
             self.mutate(items, transaction)
         # The fixtures are Katowice listings; re-home them so any configured city accepts them.
@@ -151,7 +164,7 @@ async def test_all_cities_failing_fails_the_run_without_pushing() -> None:
     actor, _, summary = await _run({"cities": ["warszawa", "krakow"]},
                                    FakeSource(blocked={"warszawa"}, empty={"krakow"}))
 
-    assert actor.failed and "nothing was charged" in actor.failed
+    assert actor.failed and "no result events were charged" in actor.failed
     assert actor.pushed == []
     assert summary["status"] == "failed"
     assert "no listings for sale" in summary["cities"]["krakow"]["reason"]
@@ -177,7 +190,9 @@ async def test_filters_mode_rooms_and_min_score() -> None:
     actor, _, _ = await _run({"cities": ["katowice"], "mode": "scoreListings", "rooms": ["2"], "minScore": 60})
     scored = actor.records("scoredListing")
     assert actor.records("areaYield") == []
-    assert "YIELD_REPORT" not in actor.kv
+    # scoreListings: YIELD_REPORT carries only the free city-level context, never paid groups
+    groups = [g for c in actor.kv["YIELD_REPORT"]["cities"].values() for g in c["groups"]]
+    assert groups and all(g["confidence"] == "low" for g in groups)
     assert scored and all(r["rooms"] == 2 and r["dealScore"] >= 60 for r in scored)
 
 
@@ -386,3 +401,102 @@ async def test_prefill_run_flag() -> None:
     _, _, prefill = await _run(dict(PREFILL_INPUT, cities=["warszawa"]))
     _, _, default = await _run({"cities": ["katowice"]})
     assert prefill["prefillRun"] is True and default["prefillRun"] is False
+
+
+from decimal import Decimal
+
+from src.charging import affordable_count
+
+PLATFORM_PRICES = {"area-yield": Decimal("0.02"), "scored-listing": Decimal("0.004"),
+                   "apify-actor-start": Decimal("0.00005")}  # no apify-default-dataset-item (removed in Console)
+
+
+class PlatformPricedActor(FakeActor):
+    """Charges like the platform: start fee already charged, per-event prices, strictly-below capacity."""
+
+    def __init__(self, max_usd: str) -> None:
+        super().__init__()
+        self.max_usd = Decimal(max_usd)
+        self.max_charge = float(self.max_usd)
+        self.charged_usd = PLATFORM_PRICES["apify-actor-start"]
+        self.charges: dict[str, int] = {"apify-actor-start": 1}
+
+    def charging_info(self) -> dict:
+        return {"isPayPerEvent": True, "maxChargeUsd": self.max_charge, "memoryMbytes": 512}
+
+    def charged_count(self, event: str) -> int | None:
+        return self.charges.get(event, 0)
+
+    async def push(self, records, event, on_pushed=None):
+        async def pusher(batch, charged_event):
+            self.pushed.append((charged_event, list(batch)))
+            if charged_event is not None:
+                self.charges[charged_event] = self.charges.get(charged_event, 0) + len(batch)
+                self.charged_usd += PLATFORM_PRICES[charged_event] * len(batch)
+            return len(batch)
+
+        def capacity(e):
+            price = PLATFORM_PRICES.get(e, Decimal(0)) if e is not None else Decimal(0)
+            return affordable_count(self.max_usd, self.charged_usd, price)
+
+        return await push_with_charging(pusher, records, event, is_pay_per_event=True,
+                                        capacity=capacity, on_pushed=on_pushed)
+
+
+@pytest.mark.parametrize("mode", ["both", "scoreListings"])
+@pytest.mark.asyncio
+async def test_platform_prices_with_one_cent_limit(mode: str) -> None:
+    actor = PlatformPricedActor("0.01")
+    actor, _, summary = await _run({"cities": ["warszawa", "krakow"], "mode": mode}, actor=actor)
+
+    assert actor.failed is None and summary["budgetReduced"] is True
+    events = [e for e, _ in actor.pushed]
+    assert "area-yield" not in events                       # never affordable at $0.02, never attempted
+    area, scored = actor.records("areaYield"), actor.records("scoredListing")
+    assert area and all(r["confidence"] == "low" for r in area)   # free city context, in both modes
+    assert len(scored) == 2                                  # 0.00995 left -> 2 x $0.004
+    best = sorted((r["dealScore"] for r in scored), reverse=True)
+    assert [r["dealScore"] for r in scored] == best
+    assert actor.charges == {"apify-actor-start": 1, "scored-listing": 2}
+    assert actor.charged_usd == Decimal("0.00805") < actor.max_usd
+    assert summary["chargeLimitReached"] is True
+
+
+@pytest.mark.asyncio
+async def test_limit_reached_mid_way_leaves_no_unpushed_groups_in_reports() -> None:
+    actor = FakeActor(capacity={"area-yield": 2, "scored-listing": 0})
+    actor, _, summary = await _run({"cities": ["katowice"]}, FakeSource(replicate=8), actor=actor)  # 4 charged groups
+
+    charged_in_dataset = [r for r in actor.records("areaYield") if r["confidence"] != "low"]
+    assert len(charged_in_dataset) == 2
+    report_groups = [g for c in actor.kv["YIELD_REPORT"]["cities"].values() for g in c["groups"]]
+    pushed = actor.records("areaYield")
+    assert len(report_groups) == len(pushed)
+    assert all(g in pushed for g in report_groups)          # no unpushed (unpaid) group in the KV report
+    assert actor.tracked_report["cities"] == actor.kv["YIELD_REPORT"]["cities"]  # what an abort would write
+    assert summary["events"]["area-yield"]["chargeable"] > 2
+
+
+@pytest.mark.asyncio
+async def test_preliminary_summary_has_no_yield_values_or_prices() -> None:
+    snapshots = []
+
+    class Snap(FakeActor):
+        async def set_value(self, key, value):
+            if key == "RUN_SUMMARY" and value.get("status") == "pushing":
+                snapshots.append(json.dumps(value))
+            await super().set_value(key, value)
+
+    await _run({"cities": ["katowice"]}, actor=Snap())
+    assert snapshots
+    prelim = snapshots[0]
+    for forbidden in ("grossYieldPct", "salePricePerM2Eur", "rentPerM2MonthlyEur", "dealScore", "pricePerM2Eur"):
+        assert forbidden not in prelim
+
+
+@pytest.mark.parametrize("mode, expect_yields", [("both", True), ("scoreListings", False)])
+@pytest.mark.asyncio
+async def test_monitoring_yields_follow_mode(mode: str, expect_yields: bool) -> None:
+    actor, _, _ = await _run({**MONITOR, "mode": mode})
+    assert bool(actor.records("areaYield")) is expect_yields
+    assert actor.records("scoredListing")

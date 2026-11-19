@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Awaitable, Callable
+from decimal import Decimal
 
 # Event names exactly as entered in Apify Console (Monetization -> pay per event).
 AREA_YIELD_EVENT = "area-yield"          # $0.02 per areaYield with confidence high or medium
@@ -20,6 +22,7 @@ async def push_with_charging(
     is_pay_per_event: bool,
     capacity: Callable[[str | None], int | None],
     batch_size: int = PUSH_BATCH,
+    on_pushed: Callable[[list[dict]], Awaitable[None]] | None = None,
 ) -> tuple[int, bool]:
     """Push records in batches, charging `event` per record; returns (pushed, limit_reached)."""
     pushed = 0
@@ -28,6 +31,8 @@ async def push_with_charging(
         if not is_pay_per_event:
             await pusher(batch, None)
             pushed += len(batch)
+            if on_pushed:
+                await on_pushed(batch)
             continue
         cap = capacity(event)
         # With no budget left the SDK still lets one charged item through to overcharge, and the
@@ -38,9 +43,23 @@ async def push_with_charging(
             batch = batch[:cap]
         charged = await pusher(batch, event) if event is not None else await _push_free(pusher, batch)
         pushed += charged
+        if on_pushed and charged:
+            await on_pushed(batch[:charged])
         if charged < len(batch) or len(batch) < len(records[i:i + batch_size]):
             return pushed, True
     return pushed, False
+
+
+def affordable_count(max_total_usd: Decimal, charged_usd: Decimal, per_item_usd: Decimal) -> int | None:
+    """Items that keep the run's total charge strictly below its limit; None = no limit or free."""
+    if not per_item_usd or max_total_usd.is_infinite():
+        return None
+    remaining = max_total_usd - charged_usd
+    n = math.floor(remaining / per_item_usd)
+    # Per the PPE docs the platform aborts a run once charges reach the limit, so never land on it exactly.
+    if n > 0 and n * per_item_usd >= remaining:
+        n -= 1
+    return max(0, n)
 
 
 async def _push_free(pusher: Callable[[list[dict], str | None], Awaitable[int]], batch: list[dict]) -> int:

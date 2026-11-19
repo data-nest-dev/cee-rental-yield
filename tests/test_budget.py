@@ -44,5 +44,6 @@ def test_needs_budget_mode(ppe: bool, max_charge, cost: float, expected: bool) -
 
 def test_reduced_input_matches_prefill_scope() -> None:
     r = reduced_input(parse_input({"cities": ["krakow", "warszawa"], "mode": "scoreListings", "rooms": ["2"]}))
-    assert (r.cities, r.sampling_mode, r.max_listings_per_side, r.mode) == (["krakow"], "city", 360, "both")
+    # mode is kept: budget mode never makes the user pay for an event type they did not ask for
+    assert (r.cities, r.sampling_mode, r.max_listings_per_side, r.mode) == (["krakow"], "city", 360, "scoreListings")
     assert r.rooms == ("2",)

@@ -63,11 +63,11 @@ def needs_budget_mode(is_pay_per_event: bool, max_charge_usd: float | None, esti
 
 
 def reduced_input(run_input: RunInput) -> RunInput:
-    # mode becomes "both" so free city-level yield records keep the dataset non-empty at any limit.
+    # mode is kept: the user never pays for an event type they did not ask for. The pipeline adds only
+    # free low-confidence yield records in budget mode so the dataset stays non-empty.
     return replace(
         run_input,
         cities=run_input.cities[:BUDGET_CITIES],
         sampling_mode="city",
         max_listings_per_side=BUDGET_LISTINGS_PER_SIDE,
-        mode="both",
     )
