@@ -82,3 +82,34 @@ class TestCleanListings:
         ]
         result, _ = clean_listings(ls)
         assert len(result) == 2
+
+
+class TestNearDuplicates:
+    def test_rent_reposts_of_the_same_unit_count_once(self) -> None:
+        """Praga-Północ case: 5 x 115 m2 / 18 000 PLN posted under different slugs."""
+        reposts = [
+            _make_listing(transaction="rent", dedup_key=f"r{i}", listing_id=str(i), district="Praga-Północ",
+                          rooms=4, area_m2=115.0, price_local=18000.0, floor=2, advertiser_type="business")
+            for i in range(5)
+        ]
+        other = _make_listing(transaction="rent", dedup_key="o", district="Praga-Północ", rooms=4,
+                              area_m2=100.0, price_local=18000.0, floor=2, advertiser_type="business")
+        result, rejected = clean_listings(reposts + [other])
+        assert len(result) == 2
+        assert rejected["near_duplicate_rent"] == 4
+
+    def test_missing_fields_compare_as_empty(self) -> None:
+        a = _make_listing(transaction="rent", dedup_key="a", floor=None, advertiser_type=None)
+        b = _make_listing(transaction="rent", dedup_key="b", floor=None, advertiser_type=None)
+        c = _make_listing(transaction="rent", dedup_key="c", floor=1, advertiser_type=None)
+        result, rejected = clean_listings([a, b, c])
+        assert [x.dedup_key for x in result] == ["a", "c"]
+        assert rejected["near_duplicate_rent"] == 1
+
+    def test_sale_twins_are_only_counted(self) -> None:
+        twins = [_make_listing(dedup_key=f"s{i}", listing_id=str(i)) for i in range(3)]
+        counters: dict[str, int] = {}
+        result, rejected = clean_listings(twins, counters=counters)
+        assert len(result) == 3
+        assert "near_duplicate_sale" not in rejected
+        assert counters == {"near_duplicate_sale": 2}

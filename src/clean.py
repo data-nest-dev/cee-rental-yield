@@ -8,8 +8,10 @@ def clean_listings(
     listings: list[Listing],
     area_min: float = 15.0,
     area_max: float = 250.0,
+    counters: dict[str, int] | None = None,
 ) -> tuple[list[Listing], dict[str, int]]:
     rejected: dict[str, int] = {}
+    counters = counters if counters is not None else {}
 
     def reject(reason: str) -> None:
         rejected[reason] = rejected.get(reason, 0) + 1
@@ -20,6 +22,7 @@ def clean_listings(
 
     result: list[Listing] = []
     seen: set[str] = set()
+    seen_twins: set[tuple] = set()
 
     for ls in listings:
         # Dedup by (source, transaction, dedup_key) — parser already deduped within
@@ -35,12 +38,28 @@ def clean_listings(
             reject("area_out_of_range")
             continue
 
+        # Same unit posted repeatedly under different slugs (agency reposts). For rent the repeats
+        # would count one flat many times in the median, so they are dropped; for sale a developer
+        # really does sell several identical flats, so they are only counted.
+        twin = _twin_key(ls)
+        if twin in seen_twins:
+            if ls.transaction == "rent":
+                reject("near_duplicate_rent")
+                continue
+            counters["near_duplicate_sale"] = counters.get("near_duplicate_sale", 0) + 1
+        seen_twins.add(twin)
+
         result.append(ls)
 
     # Outlier removal (§8 step 7): per city, 1st-99th percentile of price/m²
     result = _remove_outliers(result, rejected)
 
     return result, rejected
+
+
+def _twin_key(ls: Listing) -> tuple:
+    """Missing fields count as empty values."""
+    return (ls.city, ls.transaction, ls.district, ls.rooms, ls.area_m2, ls.price_local, ls.floor, ls.advertiser_type)
 
 
 def _remove_outliers(

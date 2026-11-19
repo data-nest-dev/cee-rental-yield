@@ -89,7 +89,8 @@ async def fetch_city(http: HttpClient, source: OtodomSource, city_key: str, run_
         except Exception as e:  # network or portal failure after retries; listing content never logged
             return _failed(result, f"{tx}: fetch failed ({type(e).__name__}: {e})")
         listings, rejected = parse_otodom_items(raw, cfg, tx, market=run_input.market)
-        cleaned, clean_rejected = clean_listings(listings)
+        dup_counters: dict[str, int] = {}
+        cleaned, clean_rejected = clean_listings(listings, counters=dup_counters)
         elapsed = time.monotonic() - t0
         window = http.window(DOMAIN)
         requests = window.requests if window else 0
@@ -104,6 +105,7 @@ async def fetch_city(http: HttpClient, source: OtodomSource, city_key: str, run_
             "htmlPages": stats.get("html_pages", 0),
             "fallbackRecoveries": stats.get("fallback_recoveries", 0),
             "proxySessions": dict(window.sessions) if window else {},
+            "nearDuplicateSale": dup_counters.get("near_duplicate_sale", 0),
         })
         result.sides[tx] = summary
         result.cleaned.extend(cleaned)

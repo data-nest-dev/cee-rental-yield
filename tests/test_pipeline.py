@@ -95,6 +95,8 @@ class FakeSource:
                 for it in copy.deepcopy(base):
                     it["slug"] = f"{it.get('slug')}-r{n}"
                     it["id"] = f"{it.get('id')}{n}"
+                    if it.get("areaInSquareMeters"):  # distinct areas, or rent reposts would be deduplicated
+                        it["areaInSquareMeters"] = round(it["areaInSquareMeters"] + n * 0.01, 2)
                     items.append(it)
         if self.mutate:
             self.mutate(items, transaction)
