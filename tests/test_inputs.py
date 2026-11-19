@@ -59,7 +59,7 @@ def test_schema_defaults_match_run_input_defaults() -> None:
         "includePrimaryMarket": d.include_primary_market,
         "minSaleSample": d.min_sale_sample, "minRentSample": d.min_rent_sample,
         "onlyNewOrChanged": d.only_new_or_changed, "stateKey": d.state_key,
-        "outputCurrency": d.output_currency, "proxyConfiguration": d.proxy_configuration,
+        "proxyConfiguration": d.proxy_configuration,
     }
     assert set(SCHEMA) == set(expected)
     for key, value in expected.items():

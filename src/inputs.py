@@ -8,7 +8,6 @@ from src.config import CITIES, MARKET_ALL, MARKET_SECONDARY
 MODES = ("yieldReport", "scoreListings", "both")
 SAMPLING_MODES = ("perDistrict", "city")
 ROOM_BUCKETS = ("1", "2", "3", "4+")
-OUTPUT_CURRENCIES = ("EUR", "local")
 STATE_KEY_RE = re.compile(r"^[A-Za-z0-9_.-]{1,100}$")
 
 DEFAULT_PROXY = {"useApifyProxy": True, "apifyProxyGroups": ["BUYPROXIES94952"]}
@@ -42,7 +41,6 @@ class RunInput:
     min_rent_sample: int = 10
     only_new_or_changed: bool = False
     state_key: str = "default"
-    output_currency: str = "EUR"
     proxy_configuration: dict | None = field(default_factory=lambda: dict(DEFAULT_PROXY))
 
     @property
@@ -102,7 +100,6 @@ def parse_input(raw: dict | None) -> RunInput:
         min_rent_sample=_int(raw, "minRentSample", d.min_rent_sample, 1, 10000),
         only_new_or_changed=_bool(raw, "onlyNewOrChanged", d.only_new_or_changed),
         state_key=raw.get("stateKey", d.state_key),
-        output_currency=_enum(raw, "outputCurrency", d.output_currency, OUTPUT_CURRENCIES),
         proxy_configuration=raw.get("proxyConfiguration", d.proxy_configuration),
     )
     if result.area_min >= result.area_max:

@@ -184,21 +184,6 @@
             "editor": "textfield",
             "default": "default"
         },
-        "outputCurrency": {
-            "title": "Sort currency",
-            "type": "string",
-            "description": "Currency used to break ties when sorting listings by deal score. Prices are always returned in EUR and in local currency.",
-            "editor": "select",
-            "enum": [
-                "EUR",
-                "local"
-            ],
-            "enumTitles": [
-                "EUR",
-                "Local currency (PLN)"
-            ],
-            "default": "EUR"
-        },
         "proxyConfiguration": {
             "sectionCaption": "Proxy",
             "title": "Proxy configuration",
