@@ -209,12 +209,12 @@ def _price_map(items: list[tuple[Listing, dict]]) -> dict[str, dict]:
     return {ls.dedup_key: {"price_local": ls.price_local} for ls, _ in items}
 
 
-def sort_scored(scored: list[tuple[Listing, dict]], output_currency: str) -> list[tuple[Listing, dict]]:
-    """Best deals first: the dataset view cannot sort, and a cost-limited run keeps the head of this list."""
-    def per_m2(item: tuple[Listing, dict]) -> float:
-        ls, rec = item
-        return rec["pricePerM2Eur"] if output_currency == "EUR" else ls.price_local / ls.area_m2
-    return sorted(scored, key=lambda item: (-item[1]["dealScore"], per_m2(item)))
+def sort_scored(scored: list[tuple[Listing, dict]]) -> list[tuple[Listing, dict]]:
+    """Best deals first: the dataset view cannot sort, and a cost-limited run keeps the head of this list.
+
+    dealScore saturates at 100 (many ties), so the discount against the group median breaks ties.
+    """
+    return sorted(scored, key=lambda item: (-item[1]["dealScore"], -item[1]["discountVsMedianPct"]))
 
 
 async def run(
@@ -318,7 +318,7 @@ async def _run(
         # scoreListings: never charge area-yield; budget mode may add free city-level context to the dataset.
         free_area, charged_area = (free_groups if summary.get("budgetReduced") else []), []
     report_only_groups = [] if run_input.wants_yields or free_area else free_groups
-    scored = sort_scored([item for out in outputs.values() for item in out.scored], run_input.output_currency)
+    scored = sort_scored([item for out in outputs.values() for item in out.scored])
 
     state: dict | None = None
     unchanged: list[tuple[Listing, dict]] = []

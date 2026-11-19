@@ -516,3 +516,10 @@ async def test_primary_market_setting_selects_portal_filter_and_labels() -> None
     scored = actor.records("scoredListing")
     assert {r["isPrimaryMarket"] for r in scored} <= {True, None}
     assert None in {r["isPrimaryMarket"] for r in scored}
+
+
+def test_sort_scored_breaks_score_ties_by_discount() -> None:
+    from src.pipeline import sort_scored
+    recs = [(None, {"dealScore": 100, "discountVsMedianPct": d, "id": i}) for i, d in enumerate([20.0, 49.4, 35.0])]
+    recs.append((None, {"dealScore": 99, "discountVsMedianPct": 60.0, "id": 9}))
+    assert [r["id"] for _, r in sort_scored(recs)] == [1, 2, 0, 9]
