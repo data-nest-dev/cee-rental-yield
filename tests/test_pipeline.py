@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from src.charging import push_with_charging
 from src.fx import parse_ecb_rates
 from src.http import BlockedError, HttpClient
 from src.pipeline import run
@@ -28,8 +29,19 @@ class FakeActor:
         self.capacity = capacity  # remaining chargeable count per event; None = unlimited
 
     async def push(self, records: list[dict], event: str | None) -> tuple[int, bool]:
-        self.pushed.append((event, list(records)))
-        return len(records), False
+        async def pusher(batch: list[dict], charged_event: str | None) -> int:
+            self.pushed.append((charged_event, list(batch)))
+            if charged_event is not None and self.capacity is not None:
+                self.capacity[charged_event] -= len(batch)
+            return len(batch)
+        return await push_with_charging(
+            pusher, records, event,
+            is_pay_per_event=self.capacity is not None,
+            capacity=lambda e: None if self.capacity is None else self.capacity.get(e),
+        )
+
+    def charged_count(self, event: str) -> int | None:
+        return None
 
     async def set_value(self, key: str, value: dict) -> None:
         self.kv[key] = copy.deepcopy(value)
@@ -162,3 +174,22 @@ async def test_yield_report_mode_pushes_no_scored_listings() -> None:
 async def test_city_mode_passes_side_limit_and_no_district_quota() -> None:
     _, source, _ = await _run({"cities": ["katowice"], "samplingMode": "city", "maxListingsPerSide": 360})
     assert source.calls[0] == ("katowice", "sale", 360, None)
+
+
+@pytest.mark.asyncio
+async def test_charge_limit_stops_cleanly_with_free_records_and_best_deals() -> None:
+    actor = FakeActor(capacity={"area-yield": 0, "scored-listing": 3})
+    actor, _, summary = await _run({"cities": ["katowice"]}, actor=actor)
+
+    assert actor.failed is None
+    assert summary["chargeLimitReached"] is True and summary["status"] == "partial"
+    assert "maximum charge" in summary["note"]
+    charged_events = {e for e, _ in actor.pushed if e is not None}
+    assert "area-yield" not in charged_events                 # nothing affordable, never sent
+    area = actor.records("areaYield")
+    assert area and all(r["confidence"] == "low" for r in area)  # free context still delivered
+    scored = actor.records("scoredListing")
+    assert len(scored) == 3
+    assert summary["events"]["scored-listing"]["pushed"] == 3
+    assert summary["events"]["scored-listing"]["chargeable"] > 3
+    assert actor.statuses[-1].startswith("Stopped at your maximum charge")

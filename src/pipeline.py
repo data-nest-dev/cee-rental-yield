@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Protocol
 
+from src.charging import AREA_YIELD_EVENT, CHARGED_CONFIDENCE, SCORED_LISTING_EVENT
 from src.clean import clean_listings
 from src.config import CITIES
 from src.fx import parse_ecb_rates
@@ -31,6 +32,7 @@ class ActorPort(Protocol):
     """What the pipeline needs from the platform; main.py adapts apify.Actor, tests use a fake."""
 
     async def push(self, records: list[dict], event: str | None) -> tuple[int, bool]: ...
+    def charged_count(self, event: str) -> int | None: ...
     async def set_value(self, key: str, value: dict) -> None: ...
     async def fail(self, message: str) -> None: ...
     async def status(self, message: str) -> None: ...
@@ -253,16 +255,36 @@ async def _run(
     summary["status"] = "pushing"
     await actor.set_value("RUN_SUMMARY", summary)
 
-    pushed_area, _ = await actor.push(area_records, None)
-    pushed_scored, _ = await actor.push([rec for _, rec in scored], None)
+    # Free records first so the dataset is never empty; then charged yields; scored listings arrive best deals first.
+    free_area = [r for r in area_records if r["confidence"] not in CHARGED_CONFIDENCE]
+    charged_area = [r for r in area_records if r["confidence"] in CHARGED_CONFIDENCE]
+    scored_records = [rec for _, rec in scored]
+    pushed_free, _ = await actor.push(free_area, None)
+    pushed_area, area_limit = await actor.push(charged_area, AREA_YIELD_EVENT)
+    pushed_scored, scored_limit = await actor.push(scored_records, SCORED_LISTING_EVENT)
+    limit_reached = area_limit or scored_limit
 
     failed = [k for k, v in summary["cities"].items() if v["status"] != "ok"]
     summary.update(
-        status="partial" if failed else "ok",
-        records={"areaYield": pushed_area, "scoredListing": pushed_scored},
+        status="partial" if failed or limit_reached else "ok",
+        chargeLimitReached=limit_reached,
+        records={"areaYield": pushed_free + pushed_area, "scoredListing": pushed_scored},
+        events={
+            AREA_YIELD_EVENT: {"chargeable": len(charged_area), "pushed": pushed_area,
+                               "charged": actor.charged_count(AREA_YIELD_EVENT)},
+            SCORED_LISTING_EVENT: {"chargeable": len(scored_records), "pushed": pushed_scored,
+                                   "charged": actor.charged_count(SCORED_LISTING_EVENT)},
+        },
         timeS=round(time.monotonic() - started, 1),
     )
+    if limit_reached:
+        summary["note"] = (f"Stopped at the run's maximum charge: {pushed_area} of {len(charged_area)} yield groups "
+                           f"and {pushed_scored} of {len(scored_records)} scored listings were delivered (best deals first).")
     await actor.set_value("RUN_SUMMARY", summary)
-    await actor.status(f"{len(outputs)} cities, {pushed_area} yield groups, {pushed_scored} scored listings"
-                 + (f"; skipped: {', '.join(failed)}" if failed else ""))
+    message = f"{len(outputs)} cities, {pushed_free + pushed_area} yield groups, {pushed_scored} scored listings"
+    if limit_reached:
+        message = f"Stopped at your maximum charge. {message}"
+    if failed:
+        message += f"; skipped: {', '.join(failed)}"
+    await actor.status(message)
     return summary
