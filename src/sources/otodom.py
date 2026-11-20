@@ -68,6 +68,7 @@ class OtodomSource:
         self.page_limit = page_limit
         self.market = market
         self._page_calls = 0
+        self._redirects: dict[str, str] = {}  # location -> redirect target learned in this fetch
 
     async def fetch_listings(
         self,
@@ -81,6 +82,7 @@ class OtodomSource:
         tx = OTODOM_TRANSACTION_MAP[transaction]
         self._http.start_window(DOMAIN, f"{city_key} {transaction}")
         self._page_calls = 0
+        self._redirects = {}
         logger.info(
             "Fetching %s %s (market=%s, sampling=%s)", city_key, transaction, self.market,
             "city" if max_per_district is None else "perDistrict",
@@ -295,9 +297,7 @@ class OtodomSource:
             "x-nextjs-data": "1",
             "Referer": f"{BASE_URL}/pl/wyniki/{tx}/mieszkanie/{location_path}",
         }
-        status, body = await self._http.get(
-            self._next_data_url(location_path, tx, page), headers=headers,
-        )
+        status, body = await self._http.get(self._data_url(location_path, tx, page), headers=headers)
 
         if status == 404:
             stats["build_id_refreshes"] += 1
@@ -305,9 +305,7 @@ class OtodomSource:
             if not new_build_id or new_build_id == self._build_id:
                 return None
             self._build_id = new_build_id
-            status, body = await self._http.get(
-                self._next_data_url(location_path, tx, page), headers=headers,
-            )
+            status, body = await self._http.get(self._data_url(location_path, tx, page), headers=headers)
 
         if status != 200:
             return None
@@ -318,6 +316,9 @@ class OtodomSource:
             return None
         page_props = data.get("pageProps", {})
         target = page_props.get("__N_REDIRECT")
+        if target and location_path in self._redirects:
+            self._redirects.pop(location_path)  # the learned canonical path no longer works: HTML fallback
+            return None
         if target:
             # Next.js answers 200 with a redirect marker instead of data, e.g. SECONDARY lives under
             # /mieszkanie,rynek-wtorny/. Follow it once (no loops); anything else falls back to HTML.
@@ -334,7 +335,14 @@ class OtodomSource:
                 return None
             if "__N_REDIRECT" in page_props:
                 return None
+            self._redirects[location_path] = target  # later pages of this location go straight to it
         return page_props.get("data", {}).get("searchAds", {})
+
+    def _data_url(self, location_path: str, tx: str, page: int) -> str:
+        """Canonical data URL once a redirect was learned for this location in this fetch, else the plain one."""
+        target = self._redirects.get(location_path)
+        learned = self._redirect_data_url(target, page) if target else None
+        return learned or self._next_data_url(location_path, tx, page)
 
     def _redirect_data_url(self, target: str, page: int) -> str | None:
         """_next/data URL for a redirect target (a site path with its own query), with our page number."""

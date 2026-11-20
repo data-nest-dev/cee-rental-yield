@@ -462,3 +462,36 @@ def test_redirect_target_outside_results_paths_is_ignored() -> None:
     src._build_id = "B1"
     assert src._redirect_data_url("https://evil.example/pl/wyniki/x?page=1", 2) is None
     assert src._redirect_data_url("/login?next=1", 2) is None
+
+
+@pytest.mark.asyncio
+async def test_learned_redirect_path_is_used_directly_for_later_pages() -> None:
+    plain = f"/_next/data/B1/pl/wyniki/sprzedaz/mieszkanie/{CITY}.json?page="
+    canon = f"/_next/data/B1/pl/wyniki/sprzedaz/mieszkanie,rynek-wtorny/{CITY}.json?page="
+    routes = {f"https://www.otodom.pl/pl/wyniki/sprzedaz/mieszkanie/{CITY}": [
+        (200, _html("B1", [_item("a1", "dab")], 5, market="SECONDARY"))]}
+    routes[plain + "2&"] = [(200, _redirect_json(SECONDARY_TARGET))]
+    for n in range(2, 6):
+        routes[canon + f"{n}&"] = [(200, _json([_item(f"a{n}", "dab")], 5))]
+    http = FakeHttp(routes)
+    items, stats = await OtodomSource(http, market="SECONDARY").fetch_listings("katowice", "sale", 360)
+
+    assert [it["slug"] for it in items] == [f"a{n}" for n in range(1, 6)]
+    assert len(http.calls) == 6  # 5 pages + the one redirect hop of page 2 (not 9)
+    assert sum("mieszkanie/" + CITY in c and "/_next/data/" in c for c in http.calls) == 1  # only the first hop
+    assert not stats["fallback_to_html"]
+
+
+@pytest.mark.asyncio
+async def test_learned_path_that_redirects_again_falls_back_to_html() -> None:
+    http = FakeHttp({
+        f"https://www.otodom.pl/pl/wyniki/sprzedaz/mieszkanie/{CITY}": [
+            (200, _html("B1", [_item("a1", "dab")], 3)), (200, _html("B1", [_item("a3", "dab")], 3))],
+        f"/_next/data/B1/pl/wyniki/sprzedaz/mieszkanie/{CITY}.json?page=2&": [(200, _redirect_json(SECONDARY_TARGET))],
+        f"/_next/data/B1/pl/wyniki/sprzedaz/mieszkanie,rynek-wtorny/{CITY}.json?page=2&": [
+            (200, _json([_item("a2", "dab")], 3))],
+        f"/_next/data/B1/pl/wyniki/sprzedaz/mieszkanie,rynek-wtorny/{CITY}.json?page=3&": [
+            (200, _redirect_json(SECONDARY_TARGET))],
+    })
+    items, stats = await OtodomSource(http, market="SECONDARY").fetch_listings("katowice", "sale", 360)
+    assert [it["slug"] for it in items] == ["a1", "a2", "a3"] and stats["fallback_to_html"] is True
