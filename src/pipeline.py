@@ -294,6 +294,18 @@ async def run(
         await http.close()
 
 
+def _yields_dataset(run_input: RunInput) -> str | None:
+    """Alias for areaYield records; None = default dataset (mode yieldReport has nothing else to return)."""
+    return YIELDS_DATASET if run_input.wants_scores else None
+
+
+def _events_summary(actor: ActorPort, area_chargeable: int, area_pushed: int, scored_chargeable: int, scored_pushed: int) -> dict:
+    return {
+        AREA_YIELD_EVENT: {"chargeable": area_chargeable, "pushed": area_pushed, "charged": actor.charged_count(AREA_YIELD_EVENT)},
+        SCORED_LISTING_EVENT: {"chargeable": scored_chargeable, "pushed": scored_pushed, "charged": actor.charged_count(SCORED_LISTING_EVENT)},
+    }
+
+
 async def _fail_proxy(actor: ActorPort, summary: dict, started: float, error: Exception) -> dict:
     summary.update(status="failed", reason=str(error))
     await save_summary(actor, summary, started)
@@ -380,9 +392,13 @@ async def _run(
             }
         if state is not None and not free_area and not charged_area and not scored:
             # A quiet watchlist is a normal result for a scheduled run, not a failure.
-            await save_state_safely(actor, summary, run_input.state_key, update_state(state, _price_map(unchanged), as_of))
-            summary.update(status="ok", records={"areaYield": 0, "scoredListing": 0},
-                           scoredAvailable=0, scoredReturned=0)
+            # Seen listings get a fresh lastSeenAt, so the 60-day pruning never drops active listings.
+            new_state = update_state(state, _price_map(unchanged), as_of)
+            saved = await save_state_safely(actor, summary, run_input.state_key, new_state)
+            summary["monitoring"].update(heldBack=0, savedListings=len(new_state) if saved else 0)
+            summary.update(status="ok", chargeLimitReached=False, records={"areaYield": 0, "scoredListing": 0},
+                           scoredAvailable=0, scoredReturned=0, yieldsDataset=_yields_dataset(run_input) or "default",
+                           events=_events_summary(actor, 0, 0, 0, 0))
             await save_summary(actor, summary, started)
             await actor.status("No new or cheaper listings since the last run.")
             return summary
@@ -432,7 +448,7 @@ async def _run(
     await refresh_reports()
     # areaYield records go to the extra "yields" dataset so the default dataset (what run-sync-get-dataset-items
     # returns) holds only scored listings; with mode yieldReport there is nothing else to return, so they stay default.
-    yields_dataset = YIELDS_DATASET if run_input.wants_scores else None
+    yields_dataset = _yields_dataset(run_input)
     summary["yieldsDataset"] = yields_dataset or "default"
     pushed_free, free_limit = await actor.push(free_area, None, on_groups, dataset=yields_dataset)
     pushed_area, area_limit = await actor.push(charged_area, AREA_YIELD_EVENT, on_groups, dataset=yields_dataset)
@@ -453,12 +469,7 @@ async def _run(
         chargeLimitReached=limit_reached,
         records={"areaYield": pushed_free + pushed_area, "scoredListing": pushed_scored},
         scoredReturned=pushed_scored,
-        events={
-            AREA_YIELD_EVENT: {"chargeable": len(charged_area), "pushed": pushed_area,
-                               "charged": actor.charged_count(AREA_YIELD_EVENT)},
-            SCORED_LISTING_EVENT: {"chargeable": len(scored_records), "pushed": pushed_scored,
-                                   "charged": actor.charged_count(SCORED_LISTING_EVENT)},
-        },
+        events=_events_summary(actor, len(charged_area), pushed_area, len(scored_records), pushed_scored),
     )
     if limit_reached:
         summary["note"] = (f"Stopped below the run's maximum charge: {pushed_area} of {len(charged_area)} yield groups "

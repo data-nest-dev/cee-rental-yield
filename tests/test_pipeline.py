@@ -639,3 +639,37 @@ async def test_proxy_refusal_during_fetch_fails_the_run_not_just_the_city() -> N
                         source_factory=lambda h: Refused(), rates_loader=_rates, as_of=AS_OF)
     assert summary["status"] == "failed" and "krakow" not in summary["cities"]
     assert actor.failed and actor.pushed == []
+
+
+# --- Quiet monitoring run: state refreshed, summary shape identical to a run with records ---
+
+@pytest.mark.asyncio
+async def test_quiet_monitoring_run_refreshes_last_seen_so_pruning_keeps_active_listings() -> None:
+    actor = FakeActor()
+    await run(actor, MONITOR, http_factory=_http, source_factory=lambda h: FakeSource(), rates_loader=_rates, as_of=date(2026, 11, 1))
+    first = copy.deepcopy(actor.state["watch-1"])
+    summary = await run(actor, MONITOR, http_factory=_http, source_factory=lambda h: FakeSource(), rates_loader=_rates, as_of=date(2026, 12, 20))
+    state = actor.state["watch-1"]
+    assert summary["records"] == {"areaYield": 0, "scoredListing": 0} and set(state) == set(first)
+    assert all(v["lastSeenAt"] == "2026-12-20" and v["firstSeenAt"] == "2026-11-01" for v in state.values())
+    assert summary["monitoring"]["savedListings"] == len(state) and summary["monitoring"]["heldBack"] == 0
+    # 79 days after the first run: without the refresh these entries would be older than the 60-day cut-off
+    third = await run(actor, MONITOR, http_factory=_http, source_factory=lambda h: FakeSource(), rates_loader=_rates, as_of=date(2027, 1, 20))
+    assert third["monitoring"]["new"] == 0 and third["monitoring"]["unchanged"] == len(first)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["scoreListings", "both"])
+async def test_run_summary_keys_do_not_depend_on_the_number_of_records(mode: str) -> None:
+    cfg = dict(MONITOR, mode=mode)
+    actor = FakeActor()
+    _, _, with_records = await _run(cfg, actor=actor)
+    _, _, quiet = await _run(cfg, actor=actor)
+    assert quiet["records"]["scoredListing"] == 0 < with_records["records"]["scoredListing"]
+    if mode == "scoreListings":      # yields follow mode in monitoring: `both` returns them on every run
+        assert quiet["records"]["areaYield"] == 0
+    assert set(quiet) - {"finishedAt"} == set(with_records) - {"finishedAt"}
+    assert set(quiet["monitoring"]) == set(with_records["monitoring"])
+    assert set(quiet["events"]) == set(with_records["events"])
+    assert quiet["events"]["scored-listing"]["pushed"] == 0 and quiet["chargeLimitReached"] is False
+    assert quiet["yieldsDataset"] == with_records["yieldsDataset"]
