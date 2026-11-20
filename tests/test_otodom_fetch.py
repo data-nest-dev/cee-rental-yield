@@ -412,3 +412,53 @@ def test_run_summary_side_reports_stopped_reason() -> None:
     from src.output import build_side_summary
     side = build_side_summary({"stopped_reason": "no_new_items"}, {}, {}, 0, 3, 0, 1.0)
     assert side["stoppedReason"] == "no_new_items"
+
+
+def _redirect_json(target: str) -> str:
+    # shape seen on the live SECONDARY page 2 (2026-11-20): status 200, no "data"
+    return json.dumps({"pageProps": {"lang": "pl", "__N_REDIRECT": target, "__N_REDIRECT_STATUS": 307}, "__N_SSP": True})
+
+
+SECONDARY_TARGET = (f"/pl/wyniki/sprzedaz/mieszkanie,rynek-wtorny/{CITY}"
+                    "?page=2&limit=72&by=LATEST&direction=DESC&market=SECONDARY&ownerTypeSingleSelect=ALL&distanceRadius=0")
+
+
+@pytest.mark.asyncio
+async def test_next_data_redirect_is_followed_once_and_pagination_continues() -> None:
+    http = FakeHttp({
+        f"https://www.otodom.pl/pl/wyniki/sprzedaz/mieszkanie/{CITY}": [
+            (200, _html("B1", [_item("a1", "dab")], 3, market="SECONDARY"))],
+        f"/_next/data/B1/pl/wyniki/sprzedaz/mieszkanie/{CITY}.json?page=2&": [(200, _redirect_json(SECONDARY_TARGET))],
+        f"/_next/data/B1/pl/wyniki/sprzedaz/mieszkanie,rynek-wtorny/{CITY}.json?page=2&": [(200, _json([_item("a2", "dab")], 3))],
+        f"/_next/data/B1/pl/wyniki/sprzedaz/mieszkanie/{CITY}.json?page=3&": [
+            (200, _redirect_json(SECONDARY_TARGET.replace("page=2", "page=3")))],
+        f"/_next/data/B1/pl/wyniki/sprzedaz/mieszkanie,rynek-wtorny/{CITY}.json?page=3&": [(200, _json([_item("a3", "dab")], 3))],
+    })
+    items, stats = await OtodomSource(http, market="SECONDARY").fetch_listings("katowice", "sale", 360)
+
+    assert [it["slug"] for it in items] == ["a1", "a2", "a3"]
+    assert stats["fallback_to_html"] is False and stats["stopped_reason"] == "last_page"
+    followed = [c for c in http.calls if "rynek-wtorny" in c]
+    assert len(followed) == 2 and all("market=SECONDARY" in c and "limit=72" in c for c in followed)
+
+
+@pytest.mark.asyncio
+async def test_redirect_loop_is_not_followed_and_falls_back_to_html() -> None:
+    http = FakeHttp({
+        f"https://www.otodom.pl/pl/wyniki/sprzedaz/mieszkanie/{CITY}": [
+            (200, _html("B1", [_item("a1", "dab")], 2)),
+            (200, _html("B1", [_item("a2", "dab")], 2)),  # page 2 via HTML
+        ],
+        "/_next/data/B1/": [(200, _redirect_json(SECONDARY_TARGET))],  # every data URL redirects again
+    })
+    items, stats = await OtodomSource(http, market="SECONDARY").fetch_listings("katowice", "sale", 360)
+
+    assert [it["slug"] for it in items] == ["a1", "a2"] and stats["fallback_to_html"] is True
+    assert sum("/_next/data/" in c for c in http.calls) == 2  # original + one redirect hop, no more
+
+
+def test_redirect_target_outside_results_paths_is_ignored() -> None:
+    src = OtodomSource(FakeHttp({}))
+    src._build_id = "B1"
+    assert src._redirect_data_url("https://evil.example/pl/wyniki/x?page=1", 2) is None
+    assert src._redirect_data_url("/login?next=1", 2) is None

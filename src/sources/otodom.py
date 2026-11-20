@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from urllib.parse import parse_qsl, urlencode, urlsplit
 import logging
 import re
 from datetime import date, datetime
@@ -315,7 +316,34 @@ class OtodomSource:
             data = json.loads(body)
         except json.JSONDecodeError:
             return None
-        return data.get("pageProps", {}).get("data", {}).get("searchAds", {})
+        page_props = data.get("pageProps", {})
+        target = page_props.get("__N_REDIRECT")
+        if target:
+            # Next.js answers 200 with a redirect marker instead of data, e.g. SECONDARY lives under
+            # /mieszkanie,rynek-wtorny/. Follow it once (no loops); anything else falls back to HTML.
+            redirected = self._redirect_data_url(target, page)
+            if redirected is None:
+                return None
+            logger.info("Otodom data route redirected (page %d): following once to %s", page, redirected.split("?")[0])
+            status, body = await self._http.get(redirected, headers=headers)
+            if status != 200:
+                return None
+            try:
+                page_props = json.loads(body).get("pageProps", {})
+            except json.JSONDecodeError:
+                return None
+            if "__N_REDIRECT" in page_props:
+                return None
+        return page_props.get("data", {}).get("searchAds", {})
+
+    def _redirect_data_url(self, target: str, page: int) -> str | None:
+        """_next/data URL for a redirect target (a site path with its own query), with our page number."""
+        parts = urlsplit(target)
+        if not parts.path.startswith("/pl/wyniki/") or parts.netloc:
+            return None
+        query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k != "page"]
+        query.insert(0, ("page", str(page)))
+        return f"{BASE_URL}/_next/data/{self._build_id}{parts.path}.json?{urlencode(query)}"
 
     async def _fetch_html_page(
         self, location_path: str, tx: str, page: int,
