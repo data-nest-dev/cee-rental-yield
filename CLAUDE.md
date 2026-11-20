@@ -629,3 +629,4 @@ Otwarte:
 1. (c) dokładne oznaczanie rynku — po teście H, tylko jeśli mieszanie rynków zaburza mediany (§6.1).
 2. Blokady i czas zapytania na platformie Apify z datacenter (5 IP z USA), potem ewentualnie residential PL (M3) — wpływa na „domyślne uruchomienie < 8 min”. Test H w toku.
 3. Pytania z briefu M3 (sekcja „Ryzyka i otwarte pytania”).
+4. Fakt (2026-11-20): dwa runy monitoringu pobrały identyczne bajty; przyczyna niezweryfikowana. Teksty dla użytkowników nie twierdzą nic o cache'u Otodomu.
