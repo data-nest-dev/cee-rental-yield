@@ -6,7 +6,7 @@ Repo: `https://github.com/data-nest-dev/cee-rental-yield` · Właściciel: datan
 
 ---
 
-## 0. Stan na 2026-11-19, wieczór (M3 zamknięte, M4 w toku) — czytaj najpierw
+## 0. Stan na 2026-11-20 (M3 zamknięte, M4: Actor opublikowany w Store) — czytaj najpierw
 
 **M1, M2 i M3 ukończone** (test H zaliczony, Actor `data-nest/cee-rental-yield` buduje z `main`). **Teraz M4 (publikacja w Store): decyzje właściciela z 2026-11-19 w punkcie 15 poniżej są źródłem prawdy.**
 
@@ -56,6 +56,10 @@ Repo: `https://github.com/data-nest-dev/cee-rental-yield` · Właściciel: datan
     7. **Zasada pracy z gitem (właściciel, 2026-11-20): push na `main` tylko na wyraźne polecenie właściciela.** Commity na gałęziach lokalnych bez pusha i bez merge'a, dopóki właściciel nie poleci. (Commit `bddaf9d` został wypchnięty na `main` bez takiego polecenia — nie powtarzać.)
     8. **Czat (Opus) a Apify (właściciel, 2026-11-20).** Czat ma connector Apify i może uruchamiać runy testowe na koncie właściciela **tylko za jego zgodą**, z podanym inputem, buildem i `maxTotalChargeUsd`. Zdarzenia PPE z runów właściciela nie są mu naliczane (`accountedChargedEventCounts` = 0, zaobserwowane 2026-11-20; mechanizm niezweryfikowany w docs).
     9. **Przekierowania `_next/data` (2026-11-20, build 0.0.24 potwierdzony na platformie).** Przy `market=SECONDARY` trasa danych zwraca 200 z `pageProps.__N_REDIRECT` (ścieżka z segmentem `,rynek-wtorny`). Kod idzie za nim maks. raz, a poznaną ścieżkę zapamiętuje na czas jednego fetchu (miasto × strona rynku × lokalizacja), więc kolejne strony to 1 zapytanie. Cel poza `/pl/wyniki/` jest odrzucany; powtórne przekierowanie → fallback HTML.
+    10. **Publikacja (2026-11-20).** Actor opublikowany w Apify Store (`isPublic: true`, build 0.0.25, commit `9442cd6`); Store Publishing Terms zaakceptowane. Weryfikacja pełnego defaultu po publikacji — run `el6ZwdJPWZn5A0NVf` (input `{}`, Warszawa + Kraków, `perDistrict`): 294 s, 106 yieldów (104 płatne) + 1000 ofert = $6,08, 212 zapytań, 2 blokady (0,9%), `identicalMerged` 273 / 235, `suspectRooms` zaobserwowane (1), koszt platformy $0,0155.
+    11. **Drugie konto Apify: nie zakładamy** (General Terms 4.3 zakazują wielu kont osobistych bez zgody Apify). Zachowanie u innych użytkowników (proxy, blokady) weryfikujemy przez Insights i Issues; zastępuje to „test z drugiego konta” z punktów 15.2–15.3 i z M4.
+    12. **Prefill a auto-test Apify:** codzienny test używa wartości `prefill` z input schema (docs: platform/actors/publishing/test), limit 5 min. **Nie zmieniać prefill na cięższy input.**
+    13. **TODO (niski priorytet, przy następnym buildzie):** README, sekcja Pricing, zdanie o `maxScoredListings: 0` — zamiast „about 6,150 listings (about $26.74)” wpisać „about 5,600 listings (about $24.50)” (po scalaniu identycznych ofert; run `el6ZwdJPWZn5A0NVf`: `scoredAvailable` 5600).
 
 **Po stronie właściciela (nie Claude Code):**
 - zaakceptować brief M3 (albo odesłać poprawki),
@@ -603,7 +607,7 @@ Dodatkowo w Apify: trzy „examples” (zapisane zadania z gotowym wejściem): �
 **M4 — publikacja (weekend 4)**
 - [x] kod: dataset `yields`, proxy bez grup, fallback monitoringu, `output_schema.json`, README pod Store (2026-11-19)
 - [ ] test monitoringu w Console, test z drugiego konta (proxy, blokady, naliczanie), ceny PPE w Console, ujednolicenie ceny przykładowej (§0.15.5)
-- [ ] Actor publiczny w Apify Store pod `pl-datanest`, ceny ustawione przez właściciela
+- [x] Actor publiczny w Apify Store pod `pl-datanest` (2026-11-20, build 0.0.25; §0.15.10); test z drugiego konta odpada (§0.15.11)
 
 ---
 
