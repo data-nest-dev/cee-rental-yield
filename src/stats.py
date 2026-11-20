@@ -43,7 +43,7 @@ class ListingComparables:
 
 def group_keys(ls: Listing) -> list[tuple]:
     """(level, key) from finest to coarsest that this listing belongs to."""
-    rb = rooms_bucket(ls.rooms)
+    rb = listing_rooms_bucket(ls)
     keys = []
     if ls.district and rb:
         keys.append(("district", (ls.country, ls.city, ls.district, rb)))
@@ -150,6 +150,11 @@ def gate_coverage(
     return result
 
 
+def listing_rooms_bucket(ls: Listing) -> str | None:
+    """Rooms bucket of a listing; None (city level only) when its room count looks wrong (suspectRooms)."""
+    return None if "suspectRooms" in ls.flags else rooms_bucket(ls.rooms)
+
+
 def rooms_bucket(rooms: int | None) -> str | None:
     if rooms is None:
         return None
@@ -166,7 +171,7 @@ def district_group_coverage(
     """§13 gate (informational): share of observed district x rooms groups meeting both thresholds."""
     counts: dict[str, dict[tuple[str, str], dict[str, int]]] = {}
     for ls in listings:
-        rb = rooms_bucket(ls.rooms)
+        rb = listing_rooms_bucket(ls)
         if not ls.district or not rb:
             continue
         g = counts.setdefault(ls.city, {}).setdefault((ls.district, rb), {"sale": 0, "rent": 0})

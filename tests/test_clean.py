@@ -106,10 +106,36 @@ class TestNearDuplicates:
         assert [x.dedup_key for x in result] == ["a", "c"]
         assert rejected["near_duplicate_rent"] == 1
 
-    def test_sale_twins_are_only_counted(self) -> None:
-        twins = [_make_listing(dedup_key=f"s{i}", listing_id=str(i)) for i in range(3)]
+    def test_identical_sale_listings_merge_into_the_lowest_listing_id(self) -> None:
+        twins = [_make_listing(dedup_key=f"s{i}", listing_id=i) for i in ("10", "9", "100")]
+        other = _make_listing(dedup_key="o", listing_id="1", price_local=999999.0)
         counters: dict[str, int] = {}
-        result, rejected = clean_listings(twins, counters=counters)
-        assert len(result) == 3
-        assert "near_duplicate_sale" not in rejected
-        assert counters == {"near_duplicate_sale": 2}
+        result, rejected = clean_listings(twins + [other], counters=counters)
+        assert [x.listing_id for x in result] == ["9", "1"]  # numeric order: 9 < 10 < 100
+        assert result[0].identical_ids == ("10", "100") and result[0].identical_keys == ("s10", "s100")
+        assert result[1].identical_ids == ()
+        assert counters == {"identical_merged": 2} and "near_duplicate_sale" not in rejected
+
+    def test_sale_listings_differing_in_district_rooms_area_or_price_are_not_merged(self) -> None:
+        base = dict(district="Ursus", rooms=2, area_m2=40.0, price_local=400000.0)
+        variants = [_make_listing(dedup_key="a", listing_id="1", **base),
+                    _make_listing(dedup_key="b", listing_id="2", **{**base, "district": "Wola"}),
+                    _make_listing(dedup_key="c", listing_id="3", **{**base, "rooms": 3}),
+                    _make_listing(dedup_key="d", listing_id="4", **{**base, "area_m2": 41.0}),
+                    _make_listing(dedup_key="e", listing_id="5", **{**base, "price_local": 410000.0})]
+        result, _ = clean_listings(variants)
+        assert len(result) == 5
+
+    def test_rent_twins_are_not_merged_as_sales(self) -> None:
+        rents = [_make_listing(transaction="rent", dedup_key=f"r{i}", listing_id=str(i), floor=i) for i in range(2)]
+        result, rejected = clean_listings(rents)
+        assert len(result) == 2 and not rejected
+
+    def test_suspect_rooms_flag_when_less_than_8_m2_per_room(self) -> None:
+        odd = _make_listing(dedup_key="x", listing_id="1", rooms=7, area_m2=27.0)
+        edge = _make_listing(dedup_key="y", listing_id="2", rooms=3, area_m2=24.0, price_local=300001.0)  # exactly 8
+        none = _make_listing(dedup_key="z", listing_id="3", rooms=None, area_m2=20.0, price_local=300002.0)
+        result, _ = clean_listings([odd, edge, none])
+        by_key = {x.dedup_key: x for x in result}
+        assert "suspectRooms" in by_key["x"].flags and by_key["x"].rooms == 7
+        assert "suspectRooms" not in by_key["y"].flags and "suspectRooms" not in by_key["z"].flags

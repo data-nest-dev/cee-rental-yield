@@ -22,7 +22,7 @@ from src.output import build_area_yield, build_scored_listing, build_side_summar
 from src.sources.otodom import DOMAIN, OtodomSource, parse_otodom_items
 from src.stats import (
     SideCoverage, area_sample, compute_groups, district_group_coverage, gate_coverage,
-    index_groups, resolve_comparables, rooms_bucket, sample_stats,
+    index_groups, resolve_comparables, listing_rooms_bucket, sample_stats,
 )
 
 logger = logging.getLogger(__name__)
@@ -109,8 +109,10 @@ async def fetch_city(http: HttpClient, source: OtodomSource, city_key: str, run_
             "htmlPages": stats.get("html_pages", 0),
             "fallbackRecoveries": stats.get("fallback_recoveries", 0),
             "proxySessions": dict(window.sessions) if window else {},
-            "nearDuplicateSale": dup_counters.get("near_duplicate_sale", 0),
+            "market": run_input.market,
         })
+        if tx == "sale":
+            summary["identicalMerged"] = dup_counters.get("identical_merged", 0)
         if tx == "rent":
             fetched = stats.get("fetched_items", 0)
             summary["nearDuplicateRentShare"] = (
@@ -159,7 +161,7 @@ def compute_city(city: CityResult, run_input: RunInput, rates: dict[str, float],
         for ls in listings:
             if ls.transaction != "sale":
                 continue
-            rb = rooms_bucket(ls.rooms)
+            rb = listing_rooms_bucket(ls)
             if not all_rooms and rb not in run_input.rooms:
                 continue
             comp = resolve_comparables(ls, index, run_input.min_sale_sample, run_input.min_rent_sample)
@@ -210,6 +212,15 @@ def apply_monitoring(
     scored: list[tuple[Listing, dict]], state: dict, as_of: date,
 ) -> tuple[list[tuple[Listing, dict]], list[tuple[Listing, dict]]]:
     """Split scored listings into new/price-cut (annotated) and unchanged."""
+    # The representative of identical listings can change between runs (a lower ID appears, the lowest
+    # one is sold); the group is not new as long as any member was seen before.
+    view = dict(state)
+    for ls, _ in scored:
+        if ls.dedup_key not in view:
+            known = [state[k] for k in ls.identical_keys if k in state]
+            if known:
+                view[ls.dedup_key] = min(known, key=lambda e: e.get("firstSeenAt", ""))
+    state = view
     changes = compute_changes({ls.dedup_key: {"price_local": ls.price_local} for ls, _ in scored}, state)
     changed, unchanged = [], []
     for ls, rec in scored:
@@ -229,7 +240,11 @@ def apply_monitoring(
 
 
 def _price_map(items: list[tuple[Listing, dict]]) -> dict[str, dict]:
-    return {ls.dedup_key: {"price_local": ls.price_local} for ls, _ in items}
+    prices: dict[str, dict] = {}
+    for ls, _ in items:
+        for key in (ls.dedup_key, *ls.identical_keys):  # all members: any of them may be the representative next time
+            prices[key] = {"price_local": ls.price_local}
+    return prices
 
 
 def sort_scored(scored: list[tuple[Listing, dict]]) -> list[tuple[Listing, dict]]:

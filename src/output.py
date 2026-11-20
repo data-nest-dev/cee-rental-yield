@@ -134,6 +134,7 @@ def build_scored_listing(
         "confidence": comparables.confidence,
         "daysOnMarket": dom,
         "flags": flags,
+        "identicalListingIds": sorted(listing.identical_ids, key=lambda i: (0, int(i)) if i.isdigit() else (1, i)),
         "firstSeenAt": None,
         "changeType": None,
         "priceCutPct": None,

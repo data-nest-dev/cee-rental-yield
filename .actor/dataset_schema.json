@@ -183,7 +183,18 @@
                     "null"
                 ],
                 "title": "Flags",
-                "description": "Reasons to check the listing: `needsRenovation`, `outlier`.",
+                "description": "Reasons to check the listing: `needsRenovation`, `outlier`, `suspectRooms` (room count looks wrong for the area; the listing is compared at city level only).",
+                "items": {
+                    "type": "string"
+                }
+            },
+            "identicalListingIds": {
+                "type": [
+                    "array",
+                    "null"
+                ],
+                "title": "Identical listings",
+                "description": "Other listings with the same district, rooms, area and price, e.g. identical units of one development.",
                 "items": {
                     "type": "string"
                 }

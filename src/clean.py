@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 import math
+from dataclasses import replace
+
 from src.models import Listing
+
+# Rooms look wrong when a flat has less than this area per room (e.g. 7 rooms in 27 m2).
+MIN_M2_PER_ROOM = 8.0
+SUSPECT_ROOMS_FLAG = "suspectRooms"
 
 
 def clean_listings(
@@ -38,23 +44,62 @@ def clean_listings(
             reject("area_out_of_range")
             continue
 
-        # Same unit posted repeatedly under different slugs (agency reposts). For rent the repeats
-        # would count one flat many times in the median, so they are dropped; for sale a developer
-        # really does sell several identical flats, so they are only counted.
-        twin = _twin_key(ls)
-        if twin in seen_twins:
-            if ls.transaction == "rent":
+        if ls.rooms and ls.area_m2 / ls.rooms < MIN_M2_PER_ROOM and SUSPECT_ROOMS_FLAG not in ls.flags:
+            ls = replace(ls, flags=ls.flags + (SUSPECT_ROOMS_FLAG,))
+
+        # Same rental posted repeatedly under different slugs (agency reposts) would count one flat many
+        # times in the median, so repeats are dropped. Identical sale listings are merged below.
+        if ls.transaction == "rent":
+            twin = _twin_key(ls)
+            if twin in seen_twins:
                 reject("near_duplicate_rent")
                 continue
-            counters["near_duplicate_sale"] = counters.get("near_duplicate_sale", 0) + 1
-        seen_twins.add(twin)
+            seen_twins.add(twin)
 
         result.append(ls)
+
+    result = _merge_identical_sales(result, counters)
 
     # Outlier removal (§8 step 7): per city, 1st-99th percentile of price/m²
     result = _remove_outliers(result, rejected)
 
     return result, rejected
+
+
+def _id_order(ls: Listing) -> tuple[int, int | str]:
+    return (0, int(ls.listing_id)) if ls.listing_id.isdigit() else (1, ls.listing_id)
+
+
+def _merge_identical_sales(listings: list[Listing], counters: dict[str, int]) -> list[Listing]:
+    """One record per group of identical sale listings (same city, district, rooms, area, price).
+
+    A developer lists several identical flats; they would count many times in the medians and be charged
+    many times. The representative is the lowest listing ID (stable between runs); the others are listed
+    in identical_ids.
+    """
+    groups: dict[tuple, list[Listing]] = {}
+    out: list[Listing | tuple] = []
+    for ls in listings:
+        if ls.transaction != "sale":
+            out.append(ls)
+            continue
+        key = (ls.city, ls.district, ls.rooms, ls.area_m2, ls.price_local)
+        if key not in groups:
+            groups[key] = []
+            out.append(key)
+        groups[key].append(ls)
+    merged: list[Listing] = []
+    for item in out:
+        if isinstance(item, Listing):
+            merged.append(item)
+            continue
+        members = sorted(groups[item], key=_id_order)
+        rep, others = members[0], members[1:]
+        counters["identical_merged"] = counters.get("identical_merged", 0) + len(others)
+        merged.append(replace(
+            rep, identical_ids=tuple(o.listing_id for o in others), identical_keys=tuple(o.dedup_key for o in others),
+        ) if others else rep)
+    return merged
 
 
 def _twin_key(ls: Listing) -> tuple:

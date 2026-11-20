@@ -662,3 +662,64 @@ async def test_run_summary_keys_do_not_depend_on_the_number_of_records(mode: str
     assert set(quiet["events"]) == set(with_records["events"])
     assert quiet["events"]["scored-listing"]["pushed"] == 0 and quiet["chargeLimitReached"] is False
     assert quiet["yieldsDataset"] == with_records["yieldsDataset"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("include_primary,market", [(True, "ALL"), (False, "SECONDARY")])
+async def test_run_summary_sides_report_market_and_identical_merged(include_primary: bool, market: str) -> None:
+    _, _, summary = await _run({"cities": ["katowice"], "includePrimaryMarket": include_primary})
+    sides = summary["cities"]["katowice"]["sides"]
+    assert sides["sale"]["market"] == market and sides["rent"]["market"] == market
+    assert isinstance(sides["sale"]["identicalMerged"], int) and "identicalMerged" not in sides["rent"]
+
+
+def test_identical_merged_on_fixtures_and_clones() -> None:
+    from src.clean import clean_listings
+    from src.config import CITIES
+    from src.sources.otodom import parse_otodom_items
+    cfg = CITIES["katowice"]
+    raw = copy.deepcopy(ITEMS["sale"])
+    clones = []
+    for n, it in enumerate(raw):
+        if it.get("estate") == "FLAT" and it.get("totalPrice") and not it["href"].startswith("hpr/"):
+            c = copy.deepcopy(it)
+            c["slug"], c["id"] = f"{it['slug']}-clone", int(it["id"]) + 10_000_000
+            clones.append(c)
+            break
+    base, _ = parse_otodom_items(raw, cfg, "sale")
+    both, _ = parse_otodom_items(raw + clones, cfg, "sale")
+    c0: dict = {}
+    c1: dict = {}
+    clean_listings(base, counters=c0)
+    cleaned, _ = clean_listings(both, counters=c1)
+    assert c0.get("identical_merged", 0) == 0 and c1["identical_merged"] == 1
+    assert any(ls.identical_ids == (str(clones[0]["id"]),) for ls in cleaned)
+
+
+def test_monitoring_group_is_not_new_when_the_representative_changes() -> None:
+    import dataclasses
+    from src.pipeline import _price_map, apply_monitoring
+    from tests.test_clean import _make_listing
+    members = [_make_listing(dedup_key=f"s{i}", listing_id=str(i)) for i in (5, 7)]
+    first = dataclasses.replace(members[0], identical_ids=("7",), identical_keys=("s7",))
+    rec = {"dealScore": 50, "discountVsMedianPct": 0.0, "daysOnMarket": 1}
+    state = {}
+    from src.monitor import update_state
+    state = update_state(state, _price_map([(first, rec)]), date(2026, 11, 1))
+    assert set(state) == {"s5", "s7"}
+    # listing 5 sold, 7 is now the representative and a lower ID 3 has appeared; neither is "new"
+    now = dataclasses.replace(_make_listing(dedup_key="s3", listing_id="3"), identical_ids=("7",), identical_keys=("s7",))
+    changed, unchanged = apply_monitoring([(now, dict(rec))], state, date(2026, 11, 20))
+    assert not changed and unchanged[0][1]["changeType"] == "unchanged"
+    assert unchanged[0][1]["firstSeenAt"] == "2026-11-01"
+    brand_new = _make_listing(dedup_key="zz", listing_id="1")
+    changed, _ = apply_monitoring([(brand_new, dict(rec))], state, date(2026, 11, 20))
+    assert changed[0][1]["changeType"] == "new"
+
+
+def test_suspect_rooms_listing_is_compared_at_city_level_only() -> None:
+    from src.stats import group_keys
+    from tests.test_clean import _make_listing
+    odd = _make_listing(rooms=7, area_m2=27.0, flags=("suspectRooms",))
+    assert [level for level, _ in group_keys(odd)] == ["city"]
+    assert [level for level, _ in group_keys(_make_listing(rooms=2))] == ["district", "city_rooms", "city"]

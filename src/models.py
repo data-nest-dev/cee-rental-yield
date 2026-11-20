@@ -24,6 +24,8 @@ class Listing:
     advertiser_type: str | None
     first_published: date | None
     flags: tuple[str, ...] = ()  # atypical-listing flags derived from the title, which is never stored
+    identical_ids: tuple[str, ...] = ()  # sale: listing IDs merged into this one (same district, rooms, area, price)
+    identical_keys: tuple[str, ...] = ()  # their dedup keys, for monitoring state only; never output
 
 
 @dataclass
