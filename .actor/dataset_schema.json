@@ -1,33 +1,347 @@
 {
     "$schema": "https://apify.com/schemas/v1/dataset.ide.json",
     "actorSpecification": 1,
+    "fields": {
+        "type": "object",
+        "properties": {
+            "recordType": {
+                "type": "string",
+                "title": "Record type",
+                "description": "`scoredListing` (an apartment for sale) or `areaYield` (a district × room group). Both can appear in the default dataset when mode is yieldReport.",
+                "enum": [
+                    "scoredListing",
+                    "areaYield"
+                ]
+            },
+            "source": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Source",
+                "description": "Portal the listing comes from.",
+                "example": "otodom"
+            },
+            "listingId": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Listing ID",
+                "description": "Portal's listing ID."
+            },
+            "url": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Listing URL",
+                "description": "Link to the listing on the portal."
+            },
+            "country": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Country",
+                "description": "ISO country code.",
+                "example": "PL"
+            },
+            "city": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "City",
+                "description": "City name.",
+                "example": "Kraków"
+            },
+            "district": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "District",
+                "description": "District name; null when the portal gives none."
+            },
+            "rooms": {
+                "type": [
+                    "integer",
+                    "string",
+                    "null"
+                ],
+                "title": "Rooms",
+                "description": "Room count of a listing (number), or the room group of a yield record (`1`, `2`, `3`, `4+`)."
+            },
+            "areaM2": {
+                "type": [
+                    "number",
+                    "null"
+                ],
+                "title": "Area (m²)",
+                "description": "Listing area in square metres."
+            },
+            "isPrimaryMarket": {
+                "type": [
+                    "boolean",
+                    "null"
+                ],
+                "title": "New build",
+                "description": "True when the portal links the flat to a development, false when resales only were requested, null when unknown."
+            },
+            "price": {
+                "type": [
+                    "object",
+                    "null"
+                ],
+                "title": "Price",
+                "description": "Asking price: `local` amount, `currency` and `eur` (ECB daily rate)."
+            },
+            "pricePerM2Eur": {
+                "type": [
+                    "number",
+                    "null"
+                ],
+                "title": "Price per m² (EUR)",
+                "description": "Asking price per m² in EUR."
+            },
+            "groupMedianPricePerM2Eur": {
+                "type": [
+                    "number",
+                    "null"
+                ],
+                "title": "Group median price per m² (EUR)",
+                "description": "Median asking price per m² of the comparison group."
+            },
+            "dealScore": {
+                "type": [
+                    "number",
+                    "null"
+                ],
+                "title": "Deal score",
+                "description": "0–100; 50 = priced at the group median, higher = cheaper than comparable flats."
+            },
+            "discountVsMedianPct": {
+                "type": [
+                    "number",
+                    "null"
+                ],
+                "title": "Below median (%)",
+                "description": "How far the price per m² is below the group median; negative when above."
+            },
+            "estimatedRentMonthlyEur": {
+                "type": [
+                    "number",
+                    "null"
+                ],
+                "title": "Estimated rent (EUR/month)",
+                "description": "Median rent per m² of the comparison group × the flat's area."
+            },
+            "grossYieldPct": {
+                "type": [
+                    "number",
+                    "null"
+                ],
+                "title": "Gross yield (%)",
+                "description": "Annual gross rental yield: for a listing from its estimated rent, for a yield record from group medians."
+            },
+            "saleGroupLevel": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Price compared at",
+                "description": "Comparison level for the sale price: `district`, `city_rooms` or `city`."
+            },
+            "rentGroupLevel": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Rent compared at",
+                "description": "Comparison level for the rent estimate: `district`, `city_rooms` or `city`; null when no rent estimate."
+            },
+            "confidence": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Confidence",
+                "description": "`high`, `medium` or `low`, from the sample size and comparison level."
+            },
+            "daysOnMarket": {
+                "type": [
+                    "integer",
+                    "null"
+                ],
+                "title": "Days on market",
+                "description": "Days since the portal first published the listing."
+            },
+            "flags": {
+                "type": [
+                    "array",
+                    "null"
+                ],
+                "title": "Flags",
+                "description": "Reasons to check the listing: `needsRenovation`, `outlier`.",
+                "items": {
+                    "type": "string"
+                }
+            },
+            "firstSeenAt": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "First seen",
+                "description": "Monitoring: date the listing was first seen."
+            },
+            "changeType": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Change",
+                "description": "Monitoring: `new`, `priceCut` or `unchanged`; null without monitoring."
+            },
+            "priceCutPct": {
+                "type": [
+                    "number",
+                    "null"
+                ],
+                "title": "Price cut (%)",
+                "description": "Monitoring: size of the price cut since the last run."
+            },
+            "groupLevel": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Compared at",
+                "description": "Yield records: comparison level used (`district`, `city_rooms`, `city`)."
+            },
+            "saleCount": {
+                "type": [
+                    "integer",
+                    "null"
+                ],
+                "title": "Sale listings",
+                "description": "Yield records: number of sale listings behind the group."
+            },
+            "rentCount": {
+                "type": [
+                    "integer",
+                    "null"
+                ],
+                "title": "Rent listings",
+                "description": "Yield records: number of rental listings behind the group."
+            },
+            "salePricePerM2Eur": {
+                "type": [
+                    "object",
+                    "null"
+                ],
+                "title": "Sale price per m² (EUR)",
+                "description": "Yield records: `median`, `p25`, `p75`."
+            },
+            "rentPerM2MonthlyEur": {
+                "type": [
+                    "object",
+                    "null"
+                ],
+                "title": "Rent per m² per month (EUR)",
+                "description": "Yield records: `median`, `p25`, `p75`."
+            },
+            "grossYieldRangePct": {
+                "type": [
+                    "array",
+                    "null"
+                ],
+                "title": "Gross yield range (%)",
+                "description": "Yield records: [low, high] from the quartiles.",
+                "items": {
+                    "type": [
+                        "number",
+                        "null"
+                    ]
+                }
+            },
+            "local": {
+                "type": [
+                    "object",
+                    "null"
+                ],
+                "title": "Local currency",
+                "description": "Yield records: currency and medians in the local currency."
+            },
+            "fx": {
+                "type": [
+                    "object",
+                    "null"
+                ],
+                "title": "Exchange rate",
+                "description": "Yield records: ECB rate used (`source`, `date`, `eurToLocal`)."
+            },
+            "priceBasis": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Price basis",
+                "description": "Always `asking`."
+            },
+            "sample": {
+                "type": [
+                    "object",
+                    "null"
+                ],
+                "title": "Sample",
+                "description": "Yield records: age and share of the sample (`sale`, `rent`)."
+            },
+            "sources": {
+                "type": [
+                    "array",
+                    "null"
+                ],
+                "title": "Sources",
+                "description": "Yield records: portals used.",
+                "items": {
+                    "type": "string"
+                }
+            },
+            "computedAt": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Computed at",
+                "description": "Yield records: UTC timestamp."
+            }
+        },
+        "additionalProperties": true
+    },
     "views": {
-        "scoredListings": {
+        "overview": {
             "title": "Scored listings",
-            "description": "One row per listing for sale (scoredListing records), best deal first.",
+            "description": "Apartments for sale, best deal first (scoredListing records).",
             "transformation": {
                 "fields": [
                     "dealScore",
-                    "url",
+                    "discountVsMedianPct",
+                    "price.local",
+                    "price.eur",
+                    "pricePerM2Eur",
                     "city",
                     "district",
                     "rooms",
                     "areaM2",
-                    "price",
-                    "pricePerM2Eur",
-                    "groupMedianPricePerM2Eur",
-                    "discountVsMedianPct",
                     "estimatedRentMonthlyEur",
                     "grossYieldPct",
-                    "saleGroupLevel",
-                    "rentGroupLevel",
-                    "confidence",
-                    "isPrimaryMarket",
-                    "daysOnMarket",
-                    "flags",
-                    "changeType",
-                    "priceCutPct",
-                    "recordType"
+                    "url",
+                    "flags"
+                ],
+                "flatten": [
+                    "price"
                 ]
             },
             "display": {
@@ -37,9 +351,21 @@
                         "label": "Deal score",
                         "format": "number"
                     },
-                    "url": {
-                        "label": "Listing",
-                        "format": "link"
+                    "discountVsMedianPct": {
+                        "label": "Below median %",
+                        "format": "number"
+                    },
+                    "price.local": {
+                        "label": "Price (local currency)",
+                        "format": "number"
+                    },
+                    "price.eur": {
+                        "label": "Price (EUR)",
+                        "format": "number"
+                    },
+                    "pricePerM2Eur": {
+                        "label": "EUR/m²",
+                        "format": "number"
                     },
                     "city": {
                         "label": "City",
@@ -57,87 +383,44 @@
                         "label": "Area m²",
                         "format": "number"
                     },
-                    "price": {
-                        "label": "Price (local, EUR)",
-                        "format": "object"
-                    },
-                    "pricePerM2Eur": {
-                        "label": "€/m²",
-                        "format": "number"
-                    },
-                    "groupMedianPricePerM2Eur": {
-                        "label": "Group median €/m²",
-                        "format": "number"
-                    },
-                    "discountVsMedianPct": {
-                        "label": "Below median %",
-                        "format": "number"
-                    },
                     "estimatedRentMonthlyEur": {
-                        "label": "Est. rent €/month",
+                        "label": "Est. rent EUR/month",
                         "format": "number"
                     },
                     "grossYieldPct": {
                         "label": "Gross yield %",
                         "format": "number"
                     },
-                    "saleGroupLevel": {
-                        "label": "Price compared at",
-                        "format": "text"
-                    },
-                    "rentGroupLevel": {
-                        "label": "Rent compared at",
-                        "format": "text"
-                    },
-                    "confidence": {
-                        "label": "Confidence",
-                        "format": "text"
-                    },
-                    "isPrimaryMarket": {
-                        "label": "New build (if known)",
-                        "format": "boolean"
-                    },
-                    "daysOnMarket": {
-                        "label": "Days on market",
-                        "format": "number"
+                    "url": {
+                        "label": "Listing",
+                        "format": "link"
                     },
                     "flags": {
                         "label": "Flags",
                         "format": "array"
-                    },
-                    "changeType": {
-                        "label": "Change",
-                        "format": "text"
-                    },
-                    "priceCutPct": {
-                        "label": "Price cut %",
-                        "format": "number"
-                    },
-                    "recordType": {
-                        "label": "Record type",
-                        "format": "text"
                     }
                 }
             }
         },
-        "yieldByDistrict": {
+        "yields": {
             "title": "Rental yield by district",
-            "description": "One row per district and room group. Filled only when mode is yieldReport; otherwise see the Rental yield dataset.",
+            "description": "One row per district and room group (areaYield records). Filled only when mode is yieldReport; otherwise see the yields dataset.",
             "transformation": {
                 "fields": [
                     "city",
                     "district",
                     "rooms",
-                    "groupLevel",
-                    "confidence",
                     "grossYieldPct",
-                    "grossYieldRangePct",
-                    "salePricePerM2Eur",
-                    "rentPerM2MonthlyEur",
+                    "salePricePerM2Eur.median",
+                    "rentPerM2MonthlyEur.median",
                     "saleCount",
                     "rentCount",
-                    "sample",
-                    "recordType"
+                    "confidence",
+                    "groupLevel"
+                ],
+                "flatten": [
+                    "salePricePerM2Eur",
+                    "rentPerM2MonthlyEur"
                 ]
             },
             "display": {
@@ -155,29 +438,17 @@
                         "label": "Rooms",
                         "format": "text"
                     },
-                    "groupLevel": {
-                        "label": "Compared at",
-                        "format": "text"
-                    },
-                    "confidence": {
-                        "label": "Confidence",
-                        "format": "text"
-                    },
                     "grossYieldPct": {
                         "label": "Gross yield %",
                         "format": "number"
                     },
-                    "grossYieldRangePct": {
-                        "label": "Yield range %",
-                        "format": "array"
+                    "salePricePerM2Eur.median": {
+                        "label": "Median sale EUR/m²",
+                        "format": "number"
                     },
-                    "salePricePerM2Eur": {
-                        "label": "Sale €/m² (median, quartiles)",
-                        "format": "object"
-                    },
-                    "rentPerM2MonthlyEur": {
-                        "label": "Rent €/m²/month (median, quartiles)",
-                        "format": "object"
+                    "rentPerM2MonthlyEur.median": {
+                        "label": "Median rent EUR/m²/month",
+                        "format": "number"
                     },
                     "saleCount": {
                         "label": "Sale listings",
@@ -187,12 +458,12 @@
                         "label": "Rent listings",
                         "format": "number"
                     },
-                    "sample": {
-                        "label": "Sample age and share",
-                        "format": "object"
+                    "confidence": {
+                        "label": "Confidence",
+                        "format": "text"
                     },
-                    "recordType": {
-                        "label": "Record type",
+                    "groupLevel": {
+                        "label": "Compared at",
                         "format": "text"
                     }
                 }

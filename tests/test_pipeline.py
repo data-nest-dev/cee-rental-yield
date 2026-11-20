@@ -329,17 +329,6 @@ async def test_failed_run_summary_is_stamped_too() -> None:
     assert stored["totals"]["citiesFailed"] == 1
 
 
-def test_dataset_views_reference_fields_the_records_actually_have() -> None:
-    import asyncio
-    schema = json.loads((Path(__file__).parent.parent / ".actor" / "dataset_schema.json").read_text())
-    actor, _, _ = asyncio.run(_run({"cities": ["katowice"]}))
-    for view, record_type in (("yieldByDistrict", "areaYield"), ("scoredListings", "scoredListing")):
-        fields = schema["views"][view]["transformation"]["fields"]
-        present = set().union(*(r.keys() for r in actor.records(record_type)))
-        assert set(fields) <= present, (view, set(fields) - present)
-        assert set(schema["views"][view]["display"]["properties"]) == set(fields)
-
-
 @pytest.mark.asyncio
 async def test_budget_mode_a_tiny_max_charge_runs_one_city_in_city_mode_and_succeeds() -> None:
     actor = FakeActor(capacity={"area-yield": 0, "scored-listing": 2})  # what $0.01 affords

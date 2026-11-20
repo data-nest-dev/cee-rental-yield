@@ -30,26 +30,29 @@ Run with no settings to analyse Warsaw and Kraków:
 }
 ```
 
-Two-room flats in Wrocław and Kraków, best deals only:
-
-```json
-{
-  "cities": ["wroclaw", "krakow"],
-  "rooms": ["2"],
-  "minScore": 70
-}
-```
-
-Warsaw against Wrocław, yield only:
-
-```json
-{
-  "cities": ["warszawa", "wroclaw"],
-  "mode": "yieldReport"
-}
-```
+More inputs are under *Example inputs* below.
 
 **Proxy.** By default the Actor uses Apify Proxy in automatic mode, with the proxy groups available to your own account. You can pass your own `proxyConfiguration` instead. If Apify Proxy refuses the connection, for example because the selected group is not available to your account, the run fails with a message saying so, and none of the result events are charged.
+
+## Example inputs
+
+**Rental yield by district in Warsaw** – returns one yield record per district and room group, in the default dataset (with `mode: "yieldReport"` the yield records stay there).
+
+```json
+{"cities": ["warszawa"], "mode": "yieldReport"}
+```
+
+**Underpriced 2-room flats in Kraków** – returns scored listings of two-room flats with a deal score of at least 80, best deals first, in the default dataset.
+
+```json
+{"cities": ["krakow"], "mode": "scoreListings", "rooms": ["2"], "minScore": 80}
+```
+
+**Warsaw vs Wrocław: where buy-to-let pays more** – returns the yield records of both cities in the default dataset, so gross yields can be compared side by side.
+
+```json
+{"cities": ["warszawa", "wroclaw"], "mode": "yieldReport"}
+```
 
 ## Where the results are
 
