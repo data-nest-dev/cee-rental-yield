@@ -117,7 +117,7 @@ Listings that are a share of a flat (`share`) or a court auction (`auction`) are
 
 - **The admin-fee trap is handled.** On Otodom, `rentPrice` in a sale listing is the building fee, not a rent; it is never used as rent. Listings with swapped rent and fee fields are rejected.
 - **Sample sizes are shown.** Every group carries its listing counts and a confidence level; thin groups fall back to the city level instead of producing noisy numbers.
-- **Cleaning is explicit.** Ads, duplicates, hidden prices, implausible sizes and price outliers are removed and counted in `RUN_SUMMARY`.
+- **Cleaning is explicit.** Ads, duplicates, hidden prices and implausible sizes are removed and counted in `RUN_SUMMARY`. The cheapest 1% and the most expensive 1% of each city's listings by price per m² are dropped before scoring (counted as `outlier` in `RUN_SUMMARY`), so the very cheapest listings are never scored. The `outlier` flag on a scored listing is separate: it only marks listings more than 40% below their group's median and removes nothing.
 - **No personal data.** Names, phone numbers, agency names, photos, descriptions and addresses are dropped when a listing is read; results contain our numbers and a link.
 - **Loud failures.** A blocked or empty run fails with a clear message. None of the Actor's result events are charged; Apify charges only its standard start fee of $0.00005.
 
@@ -140,7 +140,7 @@ Pay per result:
 
 City-level context records (low confidence) are free.
 
-By default a run returns at most 1,000 scored listings, best deals first (`maxScoredListings`; 0 = all). Example from a test run (November 2026, Apify run `3cFnNnMtkzpmtPDIb`): Warsaw and Kraków with default settings returned 109 yield groups, of which 107 were charged ($2.14; the 2 city-level context groups are free), and 1,000 scored listings ($4.00), **$6.14** in total. Kraków alone: about 49 yield groups ($0.98) and 1,000 scored listings ($4.00), about $4.98. With `maxScoredListings: 0` the default run scores all of its about 6,150 listings (about $26.74 in total).
+By default a run returns at most 1,000 scored listings, best deals first (`maxScoredListings`; 0 = all). Example from a test run (November 2026, Apify run `3cFnNnMtkzpmtPDIb`): Warsaw and Kraków with default settings returned 109 yield groups, of which 107 were charged ($2.14; the 2 city-level context groups are free), and 1,000 scored listings ($4.00), **$6.14** in total. Kraków alone costs up to about $5. With `maxScoredListings: 0` the default run scores all of its about 6,150 listings (about $26.74 in total).
 
 To spend less: `mode: "yieldReport"` returns only the yield groups (about $2 for Warsaw and Kraków); `maxScoredListings`, `minScore` and `rooms` reduce the number of scored listings; and you can set a maximum charge per run. When that maximum is close, the run stops cleanly, staying below it, after delivering free city-level context, the yield groups and the best-scored listings first.
 
