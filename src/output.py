@@ -165,6 +165,7 @@ def build_side_summary(
         "blocked": blocked,
         "buildIdRefreshes": fetch_stats.get("build_id_refreshes", 0),
         "fallbackToHtml": fetch_stats.get("fallback_to_html", False),
+        "stoppedReason": fetch_stats.get("stopped_reason"),
         "districts": fetch_stats.get("districts"),
         "districtSource": fetch_stats.get("district_source"),
         "sample": sample,

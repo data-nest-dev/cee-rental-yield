@@ -21,6 +21,10 @@ from src.models import Listing
 logger = logging.getLogger(__name__)
 PROGRESS_EVERY = 25
 
+# Pagination stops after this many pages in a row that add no new unique listing (page parameter ignored,
+# repeated or empty pages), whatever the cause.
+MAX_STALE_PAGES = 2
+
 ROOMS_MAP = {
     "ONE": 1, "TWO": 2, "THREE": 3, "FOUR": 4, "FIVE": 5,
     "SIX": 6, "SEVEN": 7, "EIGHT": 8, "NINE": 9, "TEN": 10,
@@ -111,13 +115,25 @@ class OtodomSource:
         else:
             budget = max_listings
 
+        seen_city = {it.get("slug") for it in all_items if it.get("slug")}
+        stale_pages = 0
+        stats["stopped_reason"] = "last_page"
         for page_num in range(2, city_page_limit + 1):
-            if budget is not None and len(all_items) >= budget:
+            if budget is not None and len(seen_city) >= budget:
+                stats["stopped_reason"] = "quota_reached"
                 break
             page_items, _ = await self._fetch_page(cfg.location_path, tx, page_num, stats)
             all_items.extend(page_items)
             stats["pages_fetched"] += 1
             stats["raw_items"] += len(page_items)
+            new = {it.get("slug") for it in page_items if it.get("slug")} - seen_city
+            seen_city |= new
+            stale_pages = 0 if new else stale_pages + 1
+            if stale_pages >= MAX_STALE_PAGES:
+                stats["stopped_reason"] = "no_new_items"
+                logger.warning("Stopping %s %s pagination at page %d: %d pages in a row without a new listing",
+                               city_key, transaction, page_num, MAX_STALE_PAGES)
+                break
 
         if max_per_district is None:
             _record_fetched(all_items, cfg.location_path, stats)
@@ -145,6 +161,7 @@ class OtodomSource:
         for district in districts:
             page_num = 1
             total_pages = 1
+            stale_pages = 0
             while counts.get(district, 0) < max_per_district and page_num <= total_pages:
                 page_items, pag = await self._fetch_page(district, tx, page_num, stats)
                 stats["pages_fetched"] += 1
@@ -153,16 +170,22 @@ class OtodomSource:
                 total_pages = pag.get("totalPages", 0) if pag else 0
                 if page_num == 1 and pag and pag.get("totalItems") is not None:
                     district_total_items[district] = pag["totalItems"]
+                added = 0
                 for it in page_items:
                     slug = it.get("slug")
                     if not slug or slug in seen:
                         continue
                     seen.add(slug)
+                    added += 1
                     all_items.append(it)
                     d = _district_id(it, cfg.location_path)
                     if d and _is_candidate(it):
                         counts[d] = counts.get(d, 0) + 1
                 page_num += 1
+                stale_pages = 0 if added else stale_pages + 1
+                if stale_pages >= MAX_STALE_PAGES:
+                    stats["stopped_reason"] = "no_new_items"
+                    break
 
         names = dict(district_names or {})
         for it in all_items:

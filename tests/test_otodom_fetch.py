@@ -350,3 +350,65 @@ async def test_logs_start_and_progress(caplog) -> None:
     msgs = [r.getMessage() for r in caplog.records]
     assert any(m.startswith("Fetching katowice sale") for m in msgs)
     assert len([m for m in msgs if m.startswith("Progress katowice sale")]) == 2
+
+
+def _city_url(page: int) -> str:
+    return f"/_next/data/B1/pl/wyniki/sprzedaz/mieszkanie/{CITY}.json?page={page}&"
+
+
+@pytest.mark.asyncio
+async def test_repeated_page_stops_pagination_after_two_stale_pages() -> None:
+    repeated = [_item(f"r{n}", "bogucice") for n in range(3)]
+    http = FakeHttp({
+        f"https://www.otodom.pl/pl/wyniki/sprzedaz/mieszkanie/{CITY}": [(200, _html("B1", repeated, 106))],
+        "/_next/data/B1/": [(200, _json(repeated, 106))],  # page parameter ignored: same page every time
+    })
+    items, stats = await OtodomSource(http).fetch_listings("katowice", "sale", 360)
+
+    assert len(http.calls) == 3  # page 1 (HTML) + 2 stale pages, not 106
+    assert stats["pages_fetched"] == 3
+    assert stats["stopped_reason"] == "no_new_items"
+    assert len({it["slug"] for it in items}) == 3
+
+
+@pytest.mark.asyncio
+async def test_empty_pages_also_stop_pagination() -> None:
+    http = FakeHttp({
+        f"https://www.otodom.pl/pl/wyniki/sprzedaz/mieszkanie/{CITY}": [(200, _html("B1", [_item("a1", "dab")], 50))],
+        "/_next/data/B1/": [(200, _json([], 50))],
+    })
+    _, stats = await OtodomSource(http).fetch_listings("katowice", "sale", 360)
+    assert len(http.calls) == 3 and stats["stopped_reason"] == "no_new_items"
+
+
+@pytest.mark.asyncio
+async def test_quota_reached_stops_pagination() -> None:
+    def page(n: int) -> str:
+        return _json([_item(f"p{n}-{k}", "dab") for k in range(2)], 20)
+    http = FakeHttp({
+        f"https://www.otodom.pl/pl/wyniki/sprzedaz/mieszkanie/{CITY}": [
+            (200, _html("B1", [_item("p1-0", "dab"), _item("p1-1", "dab")], 20))],
+        _city_url(2): [(200, page(2))], _city_url(3): [(200, page(3))], _city_url(4): [(200, page(4))],
+    })
+    items, stats = await OtodomSource(http).fetch_listings("katowice", "sale", 4)
+
+    assert len(http.calls) == 2  # 4 unique listings after page 2: no page 3
+    assert stats["stopped_reason"] == "quota_reached" and len(items) == 4
+
+
+@pytest.mark.asyncio
+async def test_unique_listings_count_toward_quota_not_repeats() -> None:
+    page1 = [_item("a1", "dab"), _item("a2", "dab")]
+    http = FakeHttp({
+        f"https://www.otodom.pl/pl/wyniki/sprzedaz/mieszkanie/{CITY}": [(200, _html("B1", page1, 20))],
+        _city_url(2): [(200, _json(page1, 20))],  # repeat adds nothing to the quota
+        _city_url(3): [(200, _json([_item("a3", "dab"), _item("a4", "dab")], 20))],
+    })
+    items, stats = await OtodomSource(http).fetch_listings("katowice", "sale", 4)
+    assert len({it["slug"] for it in items}) == 4 and stats["stopped_reason"] == "quota_reached"
+
+
+def test_run_summary_side_reports_stopped_reason() -> None:
+    from src.output import build_side_summary
+    side = build_side_summary({"stopped_reason": "no_new_items"}, {}, {}, 0, 3, 0, 1.0)
+    assert side["stoppedReason"] == "no_new_items"

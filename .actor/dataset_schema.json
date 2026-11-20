@@ -127,7 +127,7 @@
                     "null"
                 ],
                 "title": "Below median (%)",
-                "description": "How far the price per m² is below the group median; negative when above."
+                "description": "How far the price per m² is below the group median, in percent. Negative values mean the price is above the median."
             },
             "estimatedRentMonthlyEur": {
                 "type": [
