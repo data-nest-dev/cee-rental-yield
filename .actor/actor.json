@@ -1,16 +1,20 @@
 {
     "actorSpecification": 1,
     "name": "cee-rental-yield",
-    "title": "Rental Yield & Deal Score",
+    "title": "Poland Rental Yield & Property Deal Score",
     "description": "Gross rental yield by district and a 0–100 deal score for every apartment for sale in Warsaw, Kraków and Wrocław. Asking prices, in EUR and PLN.",
     "version": "0.1",
     "buildTag": "latest",
     "input": "./input_schema.json",
     "storages": {
-        "dataset": "./dataset_schema.json"
+        "datasets": {
+            "default": "./dataset_schema.json",
+            "yields": "./yields_dataset_schema.json"
+        }
     },
     "dockerfile": "../Dockerfile",
     "defaultMemoryMbytes": 512,
     "minMemoryMbytes": 256,
-    "maxMemoryMbytes": 1024
+    "maxMemoryMbytes": 1024,
+    "output": "./output_schema.json"
 }

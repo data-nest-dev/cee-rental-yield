@@ -31,8 +31,8 @@ def _run(tmp_path: Path, scenario: dict, max_usd: str) -> tuple[subprocess.Compl
     return proc, tmp_path / "storage"
 
 
-def _dataset(storage: Path) -> list[dict]:
-    files = sorted(p for p in (storage / "datasets" / "default").glob("*.json") if "__metadata__" not in p.name)
+def _dataset(storage: Path, alias: str = "default") -> list[dict]:
+    files = sorted(p for p in (storage / "datasets" / alias).glob("*.json") if "__metadata__" not in p.name)
     return [json.loads(p.read_text()) for p in files]  # file order = push order
 
 
@@ -51,20 +51,21 @@ def test_limit_mid_way_orders_yields_then_best_deals_and_stays_below_limit(tmp_p
     proc, storage = _run(tmp_path, {"input": {"cities": ["katowice"]}, "replicate": 8}, "0.10")
     assert proc.returncode == 0, proc.stderr[-2000:]
     summary = _kv(storage, "default", "RUN_SUMMARY")
-    items = _dataset(storage)
+    items = _dataset(storage)                    # default dataset: scored listings only
+    yields = _dataset(storage, "yields")         # areaYield records live in the extra dataset
 
     assert summary["chargeLimitReached"] is True and summary["budgetReduced"] is False
-    types = [(i["recordType"], i.get("confidence")) for i in items]
-    first_scored = next(n for n, (t, _) in enumerate(types) if t == "scoredListing")
-    assert all(t == "areaYield" for t, _ in types[:first_scored])            # yields before listings
-    assert types[0][1] == "low"                                               # free context first
-    scores = [i["dealScore"] for i in items if i["recordType"] == "scoredListing"]
+    assert summary["yieldsDataset"] == "yields"
+    assert items and all(i["recordType"] == "scoredListing" for i in items)
+    assert yields and all(i["recordType"] == "areaYield" for i in yields)
+    assert yields[0]["confidence"] == "low"                                   # free context first
+    scores = [i["dealScore"] for i in items]
     assert len(scores) == 4 and scores == sorted(scores, reverse=True)       # best deals first
-    assert summary["events"]["area-yield"]["charged"] == 4
+    assert summary["events"]["area-yield"]["charged"] == 4                    # Actor.charge on the aliased dataset
     assert _charged(summary) == Decimal("0.09605") < Decimal("0.10")
     report = _kv(storage, "default", "YIELD_REPORT")
     reported = [g for c in report["cities"].values() for g in c["groups"]]
-    assert len(reported) == sum(t == "areaYield" for t, _ in types)          # only delivered groups
+    assert len(reported) == len(yields)                                       # only delivered groups
 
 
 def test_listings_held_back_by_the_limit_are_not_marked_seen(tmp_path: Path) -> None:
@@ -74,7 +75,7 @@ def test_listings_held_back_by_the_limit_are_not_marked_seen(tmp_path: Path) -> 
     assert proc.returncode == 0, proc.stderr[-2000:]
     summary = _kv(storage, "default", "RUN_SUMMARY")
     state = _kv(storage, "cee-rental-yield-state", "watch-1")
-    delivered = [i for i in _dataset(storage) if i["recordType"] == "scoredListing"]
+    delivered = [i for i in _dataset(storage) if i["recordType"] == "scoredListing"]  # monitoring test; default dataset
     assert summary["budgetReduced"] is True and len(delivered) == 2
     assert len(state) == 2                                     # only the delivered listings are now "seen"
     assert summary["monitoring"]["heldBack"] == summary["scoredAvailable"] - 2
@@ -85,7 +86,8 @@ def test_one_cent_limit_succeeds_with_free_context_and_two_listings(tmp_path: Pa
     assert proc.returncode == 0, proc.stderr[-2000:]
     summary = _kv(storage, "default", "RUN_SUMMARY")
     items = _dataset(storage)
+    yields = _dataset(storage, "yields")
     assert summary["budgetReduced"] is True
-    assert [i["recordType"] for i in items].count("scoredListing") == 2
-    assert all(i["confidence"] == "low" for i in items if i["recordType"] == "areaYield")
-    assert items and _charged(summary) == Decimal("0.00805")
+    assert [i["recordType"] for i in items] == ["scoredListing"] * 2
+    assert yields and all(i["confidence"] == "low" for i in yields)
+    assert _charged(summary) == Decimal("0.00805")

@@ -7,7 +7,7 @@ from apify import Actor, Event
 from crawlee._log_config import configure_logger
 
 from src.charging import DEFAULT_DATASET_ITEM_EVENT, affordable_count, push_with_charging
-from src.http import HttpClient
+from src.http import PROXY_ACCESS_MESSAGE, HttpClient, ProxyAccessError
 from src.inputs import RunInput
 from src.monitor import STATE_STORE
 from src.pipeline import run
@@ -36,12 +36,26 @@ class ApifyActorPort:
             "memoryMbytes": Actor.configuration.memory_mbytes,  # ACTOR_MEMORY_MBYTES; None locally
         }
 
-    async def push(self, records: list[dict], event: str | None, on_pushed=None) -> tuple[int, bool]:
+    async def push(
+        self, records: list[dict], event: str | None, on_pushed=None, dataset: str | None = None,
+    ) -> tuple[int, bool]:
+        """Push in batches; `dataset` is an alias from actor.json (None = default dataset).
+
+        Default dataset: Actor.push_data(charged_event_name=...), which charges per pushed item.
+        Aliased dataset: Dataset.push_data has no charging, so the event is charged with Actor.charge
+        after the batch is stored. Both paths are capped by `capacity` first (budget check -> push -> charge).
+        """
         if not records:
             return 0, False
         charging = Actor.get_charging_manager()
+        aliased = await Actor.open_dataset(alias=dataset) if dataset else None
 
         async def pusher(batch: list[dict], charged_event: str | None) -> int:
+            if aliased is not None:
+                await aliased.push_data(batch)
+                if charged_event is None:
+                    return len(batch)
+                return (await Actor.charge(event_name=charged_event, count=len(batch))).charged_count
             if charged_event is None:
                 await Actor.push_data(batch)
                 return len(batch)
@@ -51,12 +65,12 @@ class ApifyActorPort:
         return await push_with_charging(
             pusher, records, event,
             is_pay_per_event=charging.get_pricing_info().is_pay_per_event,
-            capacity=self.capacity,
+            capacity=lambda e: self.capacity(e, default_dataset=aliased is None),
             on_pushed=on_pushed,
         )
 
-    def capacity(self, event: str | None) -> int | None:
-        """Records affordable within the run's max charge, counting the synthetic dataset-item price too."""
+    def capacity(self, event: str | None, default_dataset: bool = True) -> int | None:
+        """Records affordable within the run's max charge; the synthetic dataset-item price counts only for the default dataset."""
         charging = Actor.get_charging_manager()
         max_usd = charging.get_max_total_charge_usd()
         if max_usd.is_infinite():
@@ -64,7 +78,7 @@ class ApifyActorPort:
         prices = charging.get_pricing_info().per_event_prices
         # Same rule as the SDK for events without a configured price: free on the platform, $1 in local tests.
         unknown = Decimal(0) if Actor.is_at_home() else Decimal(1)
-        per_item = prices.get(DEFAULT_DATASET_ITEM_EVENT, unknown)
+        per_item = prices.get(DEFAULT_DATASET_ITEM_EVENT, unknown) if default_dataset else Decimal(0)
         if event is not None:
             per_item += prices.get(event, unknown)
         return affordable_count(max_usd, charging.calculate_total_charged_amount(), per_item)
@@ -95,7 +109,11 @@ async def make_http(run_input: RunInput) -> HttpClient:
     # Proxy access from outside Actors is disabled on the owner's account, so local runs go direct.
     if not Actor.is_at_home() or not run_input.proxy_configuration:
         return HttpClient()
-    proxy = await Actor.create_proxy_configuration(actor_proxy_input=run_input.proxy_configuration)
+    try:
+        proxy = await Actor.create_proxy_configuration(actor_proxy_input=run_input.proxy_configuration)
+    except Exception as e:  # e.g. a proxy group the account cannot use
+        logger.warning("Proxy configuration failed (%s)", type(e).__name__)
+        raise ProxyAccessError(PROXY_ACCESS_MESSAGE) from e
     if proxy is None:
         return HttpClient()
 

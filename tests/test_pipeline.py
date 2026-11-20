@@ -24,6 +24,7 @@ AS_OF = date(2026, 11, 18)
 class FakeActor:
     def __init__(self, capacity: dict[str, int] | None = None) -> None:
         self.pushed: list[tuple[str | None, list[dict]]] = []
+        self.by_dataset: dict[str | None, list[dict]] = {}  # alias (None = default) -> records
         self.kv: dict[str, dict] = {}
         self.failed: str | None = None
         self.statuses: list[str] = []
@@ -32,9 +33,10 @@ class FakeActor:
         self.max_charge: float | None = None
         self.tracked: dict | None = None
 
-    async def push(self, records: list[dict], event: str | None, on_pushed=None) -> tuple[int, bool]:
+    async def push(self, records: list[dict], event: str | None, on_pushed=None, dataset: str | None = None) -> tuple[int, bool]:
         async def pusher(batch: list[dict], charged_event: str | None) -> int:
             self.pushed.append((charged_event, list(batch)))
+            self.by_dataset.setdefault(dataset, []).extend(batch)
             if charged_event is not None and self.capacity is not None and charged_event in self.capacity:
                 self.capacity[charged_event] -= len(batch)
             return len(batch)
@@ -434,7 +436,7 @@ class PlatformPricedActor(FakeActor):
     def charged_count(self, event: str) -> int | None:
         return self.charges.get(event, 0)
 
-    async def push(self, records, event, on_pushed=None):
+    async def push(self, records, event, on_pushed=None, dataset=None):
         async def pusher(batch, charged_event):
             self.pushed.append((charged_event, list(batch)))
             if charged_event is not None:
@@ -543,3 +545,97 @@ async def test_rent_side_reports_near_duplicate_share() -> None:
     assert sides["rent"]["rejected"]["near_duplicate_rent"] > 0
     assert 0 < sides["rent"]["nearDuplicateRentShare"] <= 1
     assert "nearDuplicateRentShare" not in sides["sale"]
+
+
+# --- M4: areaYield records go to the "yields" dataset (default dataset keeps the API-friendly scored listings) ---
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode, yields_alias", [("both", "yields"), ("scoreListings", "yields"), ("yieldReport", None)])
+async def test_yields_dataset_routing_by_mode(mode: str, yields_alias: str | None) -> None:
+    actor, _, summary = await _run({"cities": ["katowice"], "mode": mode}, actor=FakeActor(capacity={"area-yield": 99, "scored-listing": 99}))
+    assert all(r["recordType"] == "areaYield" for r in actor.by_dataset.get("yields", []))
+    if mode != "scoreListings":                      # scoreListings pushes no yields outside budget mode
+        assert actor.by_dataset[yields_alias] and actor.records("areaYield") == [
+            r for r in actor.by_dataset[yields_alias] if r["recordType"] == "areaYield"]
+    if mode == "yieldReport":
+        assert set(actor.by_dataset) == {None} and summary["yieldsDataset"] == "default"
+    else:
+        assert all(r["recordType"] == "scoredListing" for r in actor.by_dataset.get(None, []))
+        assert actor.by_dataset.get(None) and summary["yieldsDataset"] == "yields"
+
+
+@pytest.mark.asyncio
+async def test_budget_mode_free_context_goes_to_yields_dataset_and_default_stays_scored() -> None:
+    actor = FakeActor(capacity={"area-yield": 0, "scored-listing": 2})
+    actor.max_charge = 0.01
+    await _run({"cities": ["katowice"], "mode": "scoreListings"}, actor=actor)
+    assert all(r["recordType"] == "areaYield" and r["confidence"] == "low" for r in actor.by_dataset.get("yields", []))
+    assert all(r["recordType"] == "scoredListing" for r in actor.by_dataset[None])
+
+
+# --- M4: monitoring falls back to a plain run when the named state store is unavailable ---
+
+class StateBrokenActor(FakeActor):
+    def __init__(self, load: bool = False, save: bool = False) -> None:
+        super().__init__()
+        self.break_load, self.break_save = load, save
+
+    async def load_state(self, key: str) -> dict:
+        if self.break_load:
+            raise PermissionError("named store not accessible")
+        return await super().load_state(key)
+
+    async def save_state(self, key: str, state: dict) -> None:
+        if self.break_save:
+            raise PermissionError("named store not accessible")
+        await super().save_state(key, state)
+
+
+@pytest.mark.asyncio
+async def test_monitoring_load_failure_warns_and_runs_without_state() -> None:
+    actor = StateBrokenActor(load=True)
+    _, _, summary = await _run(MONITOR, actor=actor)
+    scored = actor.records("scoredListing")
+    assert actor.failed is None and summary["status"] == "ok" and scored
+    assert all(r["changeType"] is None for r in scored)           # no change detection without state
+    assert summary["monitoring"]["stateAvailable"] is False and "PermissionError" in summary["monitoring"]["warning"]
+    assert actor.state == {}
+
+
+@pytest.mark.asyncio
+async def test_monitoring_save_failure_is_a_warning_after_delivery() -> None:
+    actor = StateBrokenActor(save=True)
+    _, _, summary = await _run(MONITOR, actor=actor)
+    assert actor.failed is None and summary["status"] == "ok" and actor.records("scoredListing")
+    assert summary["monitoring"]["stateAvailable"] is False and "could not be saved" in summary["monitoring"]["warning"]
+
+
+# --- M4: proxy refusal fails the run with a clear message and charges nothing ---
+
+@pytest.mark.asyncio
+async def test_proxy_creation_failure_fails_with_clear_message() -> None:
+    from src.http import PROXY_ACCESS_MESSAGE, ProxyAccessError
+
+    async def refusing(run_input):
+        raise ProxyAccessError(PROXY_ACCESS_MESSAGE)
+
+    actor = FakeActor()
+    summary = await run(actor, {"cities": ["katowice"]}, http_factory=refusing, source_factory=lambda h: FakeSource(),
+                        rates_loader=_rates, as_of=AS_OF)
+    assert summary["status"] == "failed" and "no access to the selected proxy group" in summary["reason"]
+    assert actor.failed and "no result events were charged" in actor.failed and actor.pushed == []
+
+
+@pytest.mark.asyncio
+async def test_proxy_refusal_during_fetch_fails_the_run_not_just_the_city() -> None:
+    from src.http import ProxyAccessError
+
+    class Refused(FakeSource):
+        async def fetch_listings(self, *a, **k):
+            raise ProxyAccessError("Apify Proxy refused the connection (HTTP 407/597)")
+
+    actor = FakeActor()
+    summary = await run(actor, {"cities": ["katowice", "krakow"]}, http_factory=_http,
+                        source_factory=lambda h: Refused(), rates_loader=_rates, as_of=AS_OF)
+    assert summary["status"] == "failed" and "krakow" not in summary["cities"]
+    assert actor.failed and actor.pushed == []

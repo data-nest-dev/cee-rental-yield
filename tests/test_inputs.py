@@ -91,7 +91,7 @@ def test_console_prefill_json_is_recognised_as_prefill_run() -> None:
     console = {
         "cities": ["warszawa"], "includePrimaryMarket": True, "maxListingsPerSide": 360,
         "onlyNewOrChanged": False,
-        "proxyConfiguration": {"useApifyProxy": True, "apifyProxyGroups": ["BUYPROXIES94952"]},
+        "proxyConfiguration": {"useApifyProxy": True},
         "samplingMode": "city",
     }
     assert is_prefill_run(parse_input(console))

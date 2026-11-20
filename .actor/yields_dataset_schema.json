@@ -1,0 +1,84 @@
+{
+    "$schema": "https://apify.com/schemas/v1/dataset.ide.json",
+    "actorSpecification": 1,
+    "views": {
+        "yieldByDistrict": {
+            "title": "Rental yield by district",
+            "description": "One row per district and room group (areaYield records).",
+            "transformation": {
+                "fields": [
+                    "city",
+                    "district",
+                    "rooms",
+                    "groupLevel",
+                    "confidence",
+                    "grossYieldPct",
+                    "grossYieldRangePct",
+                    "salePricePerM2Eur",
+                    "rentPerM2MonthlyEur",
+                    "saleCount",
+                    "rentCount",
+                    "sample",
+                    "recordType"
+                ]
+            },
+            "display": {
+                "component": "table",
+                "properties": {
+                    "city": {
+                        "label": "City",
+                        "format": "text"
+                    },
+                    "district": {
+                        "label": "District",
+                        "format": "text"
+                    },
+                    "rooms": {
+                        "label": "Rooms",
+                        "format": "text"
+                    },
+                    "groupLevel": {
+                        "label": "Compared at",
+                        "format": "text"
+                    },
+                    "confidence": {
+                        "label": "Confidence",
+                        "format": "text"
+                    },
+                    "grossYieldPct": {
+                        "label": "Gross yield %",
+                        "format": "number"
+                    },
+                    "grossYieldRangePct": {
+                        "label": "Yield range %",
+                        "format": "array"
+                    },
+                    "salePricePerM2Eur": {
+                        "label": "Sale €/m² (median, quartiles)",
+                        "format": "object"
+                    },
+                    "rentPerM2MonthlyEur": {
+                        "label": "Rent €/m²/month (median, quartiles)",
+                        "format": "object"
+                    },
+                    "saleCount": {
+                        "label": "Sale listings",
+                        "format": "number"
+                    },
+                    "rentCount": {
+                        "label": "Rent listings",
+                        "format": "number"
+                    },
+                    "sample": {
+                        "label": "Sample age and share",
+                        "format": "object"
+                    },
+                    "recordType": {
+                        "label": "Record type",
+                        "format": "text"
+                    }
+                }
+            }
+        }
+    }
+}

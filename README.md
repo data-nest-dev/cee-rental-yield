@@ -1,4 +1,4 @@
-# Rental Yield & Deal Score
+# Poland Rental Yield & Property Deal Score
 
 Where does a rental apartment earn the most, and which listing is priced below its neighbourhood?
 One run samples both sides of the local market – apartments for sale and for long-term rent – and returns:
@@ -9,13 +9,14 @@ One run samples both sides of the local market – apartments for sale and for l
 
 Asking prices and advertised rents, honestly labelled. Gross, not net.
 
-Currently covers Warsaw, Kraków and Wrocław (Poland). Katowice is also available.
+Currently covers Warsaw, Kraków and Wrocław (Poland).
 
 ## What you get
 
 - **Yield by district** (`areaYield` records): for every district × room group, the median sale price per m², the median monthly rent per m², quartiles, the number of listings behind each number, and the gross yield with a range. Groups with too few listings fall back to the city level and say so (`groupLevel`, `confidence`).
 - **Scored listings** (`scoredListing` records): for every apartment for sale, a 0–100 deal score, its discount against comparable flats, an estimated monthly rent and gross yield, and a link to the listing. Sorted best deal first.
 - **Sample transparency**: every yield record reports how recent its sample is (median age, oldest listing) and what share of all listings it covers.
+- **Two datasets**: scored listings in the default dataset, yield groups in a second dataset called `yields` (see *Where the results are*).
 - **Two reports in the key-value store**: `YIELD_REPORT` (all groups, all levels) and `RUN_SUMMARY` (what was fetched, rejected and charged, per city and market side).
 
 ## Quick start
@@ -38,6 +39,24 @@ Two-room flats in Wrocław and Kraków, best deals only:
   "minScore": 70
 }
 ```
+
+Warsaw against Wrocław, yield only:
+
+```json
+{
+  "cities": ["warszawa", "wroclaw"],
+  "mode": "yieldReport"
+}
+```
+
+**Proxy.** By default the Actor uses Apify Proxy in automatic mode, with the proxy groups available to your own account. You can pass your own `proxyConfiguration` instead. If Apify Proxy refuses the connection, for example because the selected group is not available to your account, the run fails with a message saying so, and none of the result events are charged.
+
+## Where the results are
+
+- **Scored listings** go to the run's default dataset. This is what `run-sync-get-dataset-items`, the API "last run dataset items" endpoints and the Export button return.
+- **Yield groups** (`areaYield` records) go to a second dataset named `yields`. It is linked from the run's Output tab and listed in the Storage tab; its API URL is in the run's `output`. Keeping them apart means a call that reads only the default dataset gets listings that all have the same shape.
+- **Exception:** with `mode: "yieldReport"` there are no scored listings, so the yield groups stay in the default dataset. Otherwise that call would return an empty response.
+- **`YIELD_REPORT`** in the key-value store always holds the groups of the run, whatever the mode.
 
 ## Output
 
@@ -106,6 +125,8 @@ Listings that are a share of a flat (`share`) or a court auction (`auction`) are
 
 Set `onlyNewOrChanged: true` and schedule the Actor (for example daily). Each run returns only listings that are new, or at least 1% cheaper, since the last run with the same `stateKey`, marked `changeType: "new"` or `"priceCut"` with `priceCutPct`. Use one schedule per state key. Unchanged listings are neither returned nor charged.
 
+The monitoring memory is a named key-value store (`cee-rental-yield-state`) in your account. If it cannot be opened or written, the run does not fail: it returns the listings without change detection (`changeType` is `null`) or, when only the final save fails, keeps the results already delivered, and `RUN_SUMMARY.monitoring.warning` says what happened.
+
 For schedules we recommend `mode: "scoreListings"`: yield groups follow `mode` in monitoring runs too, so with `both` every scheduled run also returns (and charges) the full set of yield groups. Run a separate yield report when you need one. A run that finds nothing new still succeeds.
 
 ## Pricing
@@ -123,7 +144,7 @@ By default a run returns at most 1,000 scored listings, best deals first (`maxSc
 
 To spend less: `mode: "yieldReport"` returns only the yield groups (about $2 for Warsaw and Kraków); `maxScoredListings`, `minScore` and `rooms` reduce the number of scored listings; and you can set a maximum charge per run. When that maximum is close, the run stops cleanly, staying below it, after delivering free city-level context, the yield groups and the best-scored listings first.
 
-**Very low maximum charge.** The Actor collects the whole sample before it returns any result. If your maximum charge per run is too low to justify that (below about $0.03 with default settings), the run uses a smaller sample instead: the first city in your list, the 360 newest listings for sale and for rent, whole-city comparison. The run still succeeds and returns free city-level context plus what your limit covers (for example 2 scored listings at $0.01), never an event type you did not ask for, and `RUN_SUMMARY` shows `budgetReduced: true`. **Recommended minimum for the default run: $0.05** (with the residential proxy: $2).
+**Very low maximum charge.** The Actor collects the whole sample before it returns any result. If your maximum charge per run is too low to justify that (below about $0.03 with default settings), the run uses a smaller sample instead: the first city in your list, the 360 newest listings for sale and for rent, whole-city comparison. The run still succeeds and returns free city-level context plus what your limit covers (for example 2 scored listings at $0.01), never an event type you did not ask for, and `RUN_SUMMARY` shows `budgetReduced: true`. **Recommended minimum for the default run: $0.05.**
 
 ## Limitations
 
@@ -134,7 +155,6 @@ To spend less: `mode: "yieldReport"` returns only the yield groups (about $2 for
 - **Wrong portal locations can slip through.** The portal takes the location from the advertiser. A flat filed under the wrong city is dropped when its listing text or address names another city; if the real city is named nowhere, it can end up in the results.
 - **Flags are keyword-based.** Share, auction and renovation flags rely on words in the listing title, so listings that do not say it are not flagged.
 - **No information about the flat's condition.** A cheap listing may need renovation.
-- **Katowice has a small rental market** (about 770 rentals city-wide), so many of its groups fall back to the city level.
 - **Poland only for now.** More countries are planned.
 
 ## FAQ

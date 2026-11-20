@@ -12,6 +12,9 @@ CHARGED_CONFIDENCE = ("high", "medium")
 # (on by default for new PPE Actors; this Actor expects it removed in Console, but never relies on it).
 DEFAULT_DATASET_ITEM_EVENT = "apify-default-dataset-item"
 PUSH_BATCH = 100
+# Alias of the extra dataset for areaYield records (actor.json storages.datasets). Items pushed to it never
+# trigger the synthetic apify-default-dataset-item event (SDK 4.3.0: is_default_dataset is False for aliases).
+YIELDS_DATASET = "yields"
 
 
 async def push_with_charging(

@@ -6,9 +6,9 @@ Repo: `https://github.com/data-nest-dev/cee-rental-yield` · Właściciel: datan
 
 ---
 
-## 0. Stan na 2026-11-18, wieczór (po PR #1, `main` = `7f9db93`) — czytaj najpierw
+## 0. Stan na 2026-11-19, wieczór (M3 zamknięte, M4 w toku) — czytaj najpierw
 
-**M1 i M2 ukończone.** Teraz: **plan M3 (brief) czeka na akceptację właściciela — nie zaczynaj kodowania M3 przed akceptacją.**
+**M1, M2 i M3 ukończone** (test H zaliczony, Actor `data-nest/cee-rental-yield` buduje z `main`). **Teraz M4 (publikacja w Store): decyzje właściciela z 2026-11-19 w punkcie 15 poniżej są źródłem prawdy.**
 
 **Decyzje właściciela (obowiązują):**
 1. **Zero ryzyka prawnego i wizerunkowego.** Źródło wchodzi do Actora tylko, jeśli `robots.txt` pozwala na używane ścieżki dla `User-agent: *`. Wątpliwości = nie wchodzi. Sreality wyłączone.
@@ -45,6 +45,15 @@ Repo: `https://github.com/data-nest-dev/cee-rental-yield` · Właściciel: datan
     9. **Model kosztu autora (`src/budget.py`, kalibracja z Run 2, zaakceptowana):** `CU × $0,21 + rekordy × $0,0000054 + 20 zapisów KV × $0,00005`; `SECONDS_PER_REQUEST` 1,19 przy ≥ 512 MB i 1,45 poniżej. Szacunek Run 2 $0,0125 (zmierzone $0,012). Progi `minMaxChargeUsd`: domyślne 512 MB $0,0304, 256 MB $0,0235, prefill 512 MB $0,0087 (zastępuje progi z decyzji 10: $0,029 / $0,0053). `FIXED_SECONDS` (30), zapytania na dzielnicę (60) i `BYTES_PER_REQUEST` bez zmian do ≥ 3 runów.
     6. Brief M3 nie jest już prowadzony jako artifact: decyzje w CLAUDE.md, raporty w czacie.
     7. Test limitu kosztu na platformie niepotrzebny: pokrywa go lokalny test integracyjny (`tests/test_integration_sdk.py`, decyzja z 2026-11-18).
+
+15. **Decyzje M4 (właściciel, 2026-11-19) — źródło prawdy:**
+    1. **Dwa datasety.** `actor.json` → `storages.datasets: {default, yields}` (pliki `dataset_schema.json`, `yields_dataset_schema.json`), `output_schema.json` linkuje oba (`{{links.apiDefaultDatasetUrl}}/items`, `{{storages.datasets.yields.apiUrl}}/items`). Rekordy `areaYield` idą do aliasu `yields`, domyślny dataset ma tylko `scoredListing`. **Wyjątek: `mode = yieldReport`** — yieldy zostają w datasecie domyślnym. **Powód (do README): API** — `run-sync-get-dataset-items` czyta tylko dataset domyślny i przy `yieldReport` zwróciłby pustą odpowiedź; **nie** test Store (ten uruchamia prefill, `mode = both`). Brak syntetycznego `apify-default-dataset-item` dla aliasu (SDK 4.3.0: `is_default_dataset` = False dla aliasu); `Actor.push_data` pisze tylko do domyślnego, więc dla aliasu: `dataset.push_data` → `Actor.charge(event_name, count)`, a pojemność (`ApifyActorPort.capacity(default_dataset=False)`, bez ceny syntetycznej) liczona **przed** pushem; kolejność: pojemność → push → charge (`Actor.charge` przy przekroczeniu budżetu nalicza „fitting + 1”, więc batch jest zawsze przycinany do pojemności). Zweryfikowane w kodzie SDK (`.venv`, `_actor.py`, `_charging.py`, `_dataset_client.py`) i testem integracyjnym z prawdziwym SDK (`tests/test_integration_sdk.py`). `RUN_SUMMARY.yieldsDataset` = `yields` albo `default`.
+    2. **Proxy.** `default` i `prefill` = `{"useApifyProxy": true}` bez grup (tryb automatyczny; dedykowana grupa `BUYPROXIES94952` jest używalna tylko przez właściciela, docs: „only you can use them”). Odmowa proxy (HTTP 407/597, `CONNECT tunnel failed`, błąd `create_proxy_configuration`) → `ProxyAccessError` → run kończy się błędem z czytelnym komunikatem, zero opłat (`src/http.py`, `PROXY_ACCESS_MESSAGE`). README nie poleca RESIDENTIAL; mówi tylko, że można podać własne `proxyConfiguration`. **Nieweryfikowane w docs:** czy automatyczne IP datacenter użytkownika dają < 5% blokad na Otodom — test z drugiego konta po publikacji.
+    3. **Monitoring.** Błąd otwarcia named store `cee-rental-yield-state` → ostrzeżenie w `RUN_SUMMARY.monitoring.warning` (`stateAvailable: false`), run bez stanu (zwykły run, `changeType = null`, stan nie zapisywany); błąd zapisu stanu po dostarczeniu wyników → tylko ostrzeżenie. **Test w Console (Limited permissions):** `{"cities":["wroclaw"],"samplingMode":"city","maxListingsPerSide":360,"mode":"scoreListings","onlyNewOrChanged":true,"stateKey":"m4test"}` dwa razy pod rząd; run 1: wszystkie `new` i w Storage pojawia się `cee-rental-yield-state`; run 2: prawie pusty wynik, `Succeeded`; powtórzyć z drugiego konta.
+    4. **Teksty Store (EN).** Tytuł: „Poland Rental Yield & Property Deal Score” (w `actor.json`). Katowice nie występują w tekstach (dostępne w inpucie, nie reklamowane). SEO description (145 znaków, sprawdzone kodem): „Web scraping of Polish property listings: gross rental yield per district and a 0–100 deal score for every flat, in EUR. Warsaw, Kraków, Wrocław.” W tekstach marketingowych bez słowa „scraper”.
+    5. **Cena przykładowa domyślnego uruchomienia — do ujednolicenia.** README i §0.11.1 mówią $6,18 (109 grup × $0,02 + 1000 × $0,004). Różnica $6,14 vs $6,18 = 107 vs 109 grup: płatne są tylko grupy `high`/`medium`, `low` są darmowe. Wartość i identyfikator runu (Run 2 testu H) trzeba wziąć z `RUN_SUMMARY.events.area-yield.chargeable` na platformie — Claude Code nie ma do niej dostępu (brak Apify CLI). **Do czasu dostarczenia ID przez właściciela obie liczby w repo pozostają bez zmian.**
+    6. **Zasady Apify (docs, 2026-11-19):** podwyżka ceny, nowe płatne zdarzenie i zmiana modelu = powiadomienie 14 dni, nie do anulowania, max raz na miesiąc na Actora; obniżka, usunięcie zdarzenia i zmiana opisu — od razu; bez płacących użytkowników zmiany są natychmiastowe. Checklista monetyzacji: model PPE; `area-yield` $0.02, `scored-listing` $0.004; usunąć `apify-default-dataset-item`; `apify-actor-start` zostaje (nie naliczać z kodu); „Pay per event + usage” wyłączone; zdarzenie główne = `scored-listing`; minimalny max cost $0.05.
+    7. **Zasada pracy z gitem (właściciel, 2026-11-20): push na `main` tylko na wyraźne polecenie właściciela.** Commity na gałęziach lokalnych bez pusha i bez merge'a, dopóki właściciel nie poleci. (Commit `bddaf9d` został wypchnięty na `main` bez takiego polecenia — nie powtarzać.)
 
 **Po stronie właściciela (nie Claude Code):**
 - zaakceptować brief M3 (albo odesłać poprawki),
@@ -395,13 +404,13 @@ Domyślne uruchomienie bez ustawień ma dać sensowny wynik w kilka minut (Warsz
 | `minSaleSample` / `minRentSample` | integer | 15 / 10 | próg grupy przed fallbackiem |
 | `onlyNewOrChanged` | boolean | false | monitoring: tylko nowe oferty i obniżki |
 | `stateKey` | string | `default` | nazwa pamięci monitoringu |
-| `proxyConfiguration` | object (editor `proxy`) | do ustalenia w briefie M3 (test M3: `{"useApifyProxy": true, "apifyProxyGroups": ["BUYPROXIES94952"]}`; residential PL: `{"useApifyProxy": true, "apifyProxyGroups": ["RESIDENTIAL"], "apifyProxyCountry": "PL"}` dopiero po decyzji właściciela, §0 decyzja 8) | Kod obsługuje oba warianty. Potwierdzone w źródle SDK `apify` 4.3.0 (`_actor.py`, `create_proxy_configuration`): czyta `useApifyProxy`, `apifyProxyCountry`, `apifyProxySubdivision`, `apifyProxyGroups`, `proxyUrls`; jawny argument `country_code=` ma pierwszeństwo przed inputem |
+| `proxyConfiguration` | object (editor `proxy`) | `{"useApifyProxy": true}` (default i prefill; §0 decyzja 15.2; test H szedł przez grupę `BUYPROXIES94952`, którą mógłby użyć tylko właściciel) | Kod obsługuje oba warianty. Potwierdzone w źródle SDK `apify` 4.3.0 (`_actor.py`, `create_proxy_configuration`): czyta `useApifyProxy`, `apifyProxyCountry`, `apifyProxySubdivision`, `apifyProxyGroups`, `proxyUrls`; jawny argument `country_code=` ma pierwszeństwo przed inputem |
 
 ---
 
 ## 11. Wyjście
 
-Jeden dataset, typ rekordu w polu `recordType`. Nazwy pól camelCase. Przykład wartości to ilustracja struktury.
+Dwa datasety (§0 decyzja 15.1): domyślny (`scoredListing`; przy `mode = yieldReport` także `areaYield`) i `yields` (`areaYield`). Typ rekordu w polu `recordType`. Nazwy pól camelCase. Przykład wartości to ilustracja struktury.
 
 **`areaYield`:**
 ```json
@@ -439,7 +448,7 @@ Jeden dataset, typ rekordu w polu `recordType`. Nazwy pól camelCase. Przykład 
 
 **`RUN_SUMMARY`** (key-value store, klucz `RUN_SUMMARY`; pola M3: `status`, `budgetReduced`, `maxChargeUsd`, `estimatedAuthorCostUsd`, `minMaxChargeUsd`, `chargeLimitReached`, `scoredAvailable`, `scoredReturned`, `prefillRun`, `events`, `records`, `totals`, `monitoring`; per strona rynku także `sample`, `primaryMarketProjects`, `proxySessions`): per miasto i strona rynku: liczba stron, ofert surowych, ofert po czyszczeniu, odrzucenia z powodami, zapytania zablokowane/błędne (kody), `buildIdRefreshes`, `fallbackToHtml`, czas; per miasto: odsetek grup z pełną próbą; kurs EBC; porównanie naszej mediany najmu za m² z `faqDynamicData.avgPricePerM` (Otodom). To jest też wynik pomiaru „weekend 1”.
 
-**`.actor/dataset_schema.json`:** dwa widoki tabeli: „Rental yield by district” (pola `areaYield`) i „Scored listings” (pola `scoredListing`, sortowanie po `dealScore`). Format widoków: sprawdź `https://docs.apify.com/platform/actors/development/actor-definition/dataset-schema`. Widoki nie filtrują po `recordType` — puste kolumny drugiego typu są akceptowalne; w trybie `both` dodatkowo zapisz pełny raport grup do key-value store pod `YIELD_REPORT`.
+**`.actor/dataset_schema.json`** (domyślny dataset; `yields_dataset_schema.json` ma tylko widok yieldów): dwa widoki tabeli: „Rental yield by district” (pola `areaYield`) i „Scored listings” (pola `scoredListing`, sortowanie po `dealScore`). Format widoków: sprawdź `https://docs.apify.com/platform/actors/development/actor-definition/dataset-schema`. Widoki nie filtrują po `recordType` — puste kolumny drugiego typu są akceptowalne; w trybie `both` dodatkowo zapisz pełny raport grup do key-value store pod `YIELD_REPORT`.
 
 ---
 
@@ -500,7 +509,7 @@ curl -s https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml > tests/fi
 {
   "actorSpecification": 1,
   "name": "cee-rental-yield",
-  "title": "Rental Yield & Deal Score",
+  "title": "Poland Rental Yield & Property Deal Score",
   "description": "Gross rental yield by district and a 0–100 deal score for every apartment for sale in Warsaw, Kraków, Wrocław and Katowice. In EUR.",
   "version": "0.1",
   "buildTag": "latest",
@@ -590,6 +599,8 @@ Dodatkowo w Apify: trzy „examples” (zapisane zadania z gotowym wejściem): �
 - [ ] **ponowny pomiar blokad na platformie Apify z proxy** (M1 mierzył z domowego IP bez proxy) — najpierw datacenter `BUYPROXIES94952`; > 5% blokad → stop i raport; kryterium 1 bramki obowiązuje dla środowiska produkcyjnego
 
 **M4 — publikacja (weekend 4)**
+- [x] kod: dataset `yields`, proxy bez grup, fallback monitoringu, `output_schema.json`, README pod Store (2026-11-19)
+- [ ] test monitoringu w Console, test z drugiego konta (proxy, blokady, naliczanie), ceny PPE w Console, ujednolicenie ceny przykładowej (§0.15.5)
 - [ ] Actor publiczny w Apify Store pod `pl-datanest`, ceny ustawione przez właściciela
 
 ---

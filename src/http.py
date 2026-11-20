@@ -112,7 +112,7 @@ class HttpClient:
         if window.requests > BLOCK_MIN_REQUESTS and window.blocked / window.requests > BLOCK_RATE_LIMIT:
             raise BlockedError(
                 f"{domain} blocked {window.blocked} of {window.requests} requests "
-                f"({window.label}); try residential proxy PL"
+                f"({window.label}); check your proxy settings"
             )
 
         async with lock:
@@ -127,6 +127,7 @@ class HttpClient:
             last_exc = None
             for attempt in range(MAX_RETRIES):
                 session_id = self._session_id(domain)
+                proxy: str | None = None
                 try:
                     stats.last_request_time = time.monotonic()
                     stats.requests += 1
@@ -142,6 +143,8 @@ class HttpClient:
                         kwargs["proxy"] = proxy
 
                     resp = await session.get(url, **kwargs)
+                    if proxy and _is_proxy_refusal(resp.status_code, None):
+                        raise ProxyAccessError(PROXY_ACCESS_MESSAGE)
                     body = resp.text
                     stats.bytes_downloaded += len(body.encode())
 
@@ -169,7 +172,11 @@ class HttpClient:
 
                     return resp.status_code, body
 
+                except ProxyAccessError:
+                    raise
                 except Exception as e:
+                    if proxy and _is_proxy_refusal(None, e):
+                        raise ProxyAccessError(PROXY_ACCESS_MESSAGE) from e
                     last_exc = e
                     stats.errors += 1
                     window.count(session_id, blocked=False)
@@ -189,6 +196,24 @@ class HttpClient:
 
 class BlockedError(Exception):
     pass
+
+
+class ProxyAccessError(BlockedError):
+    """The proxy itself refused us (bad credentials or a group the account cannot use); not a portal block."""
+
+
+PROXY_ACCESS_MESSAGE = (
+    "Apify Proxy refused the connection (HTTP 407/597), most likely because your account has no access to the "
+    "selected proxy group. Use the default automatic proxy, choose a group listed on the Proxy page of your "
+    "Apify Console, or pass your own proxyConfiguration."
+)
+
+
+def _is_proxy_refusal(status: int | None, exc: Exception | None) -> bool:
+    if status in (407, 597):
+        return True
+    text = str(exc or "")
+    return "CONNECT tunnel failed" in text or "Proxy Authentication" in text or "response 407" in text
 
 
 def _backoff(attempt: int) -> float:

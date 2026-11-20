@@ -10,11 +10,11 @@ from typing import Protocol
 from src.budget import (
     BUDGET_WARNING, estimate_author_cost_usd, min_max_charge_usd, needs_budget_mode, reduced_input,
 )
-from src.charging import AREA_YIELD_EVENT, CHARGED_CONFIDENCE, SCORED_LISTING_EVENT
+from src.charging import AREA_YIELD_EVENT, CHARGED_CONFIDENCE, SCORED_LISTING_EVENT, YIELDS_DATASET
 from src.clean import clean_listings
 from src.config import CITIES
 from src.fx import parse_ecb_rates
-from src.http import BlockedError, HttpClient
+from src.http import BlockedError, HttpClient, ProxyAccessError
 from src.inputs import ROOM_BUCKETS, InputError, RunInput, is_prefill_run, parse_input
 from src.models import Listing
 from src.monitor import compute_changes, update_state
@@ -35,7 +35,9 @@ SIDES = ("sale", "rent")
 class ActorPort(Protocol):
     """What the pipeline needs from the platform; main.py adapts apify.Actor, tests use a fake."""
 
-    async def push(self, records: list[dict], event: str | None, on_pushed=None) -> tuple[int, bool]: ...
+    async def push(
+        self, records: list[dict], event: str | None, on_pushed=None, dataset: str | None = None,
+    ) -> tuple[int, bool]: ...
     def charged_count(self, event: str) -> int | None: ...
     async def load_state(self, key: str) -> dict: ...
     async def save_state(self, key: str, state: dict) -> None: ...
@@ -84,6 +86,8 @@ async def fetch_city(http: HttpClient, source: OtodomSource, city_key: str, run_
             raw, stats = await source.fetch_listings(
                 city_key, tx, run_input.max_listings_per_side, max_per_district=run_input.max_per_district_arg(),
             )
+        except ProxyAccessError:
+            raise
         except BlockedError as e:
             return _failed(result, f"{tx}: blocked ({e})")
         except Exception as e:  # network or portal failure after retries; listing content never logged
@@ -188,6 +192,20 @@ async def save_summary(actor: ActorPort, summary: dict, started: float) -> None:
     await actor.set_value("RUN_SUMMARY", summary)
 
 
+async def save_state_safely(actor: ActorPort, summary: dict, key: str, state: dict) -> bool:
+    """The results are already delivered and charged by now, so a failing state write is a warning, not a failure."""
+    try:
+        await actor.save_state(key, state)
+        return True
+    except Exception as e:
+        logger.warning("Monitoring state not saved (%s)", type(e).__name__)
+        summary.setdefault("monitoring", {}).update(
+            stateAvailable=False,
+            warning=f"Monitoring state could not be saved ({type(e).__name__}); the next run will treat these listings as new.",
+        )
+        return False
+
+
 def apply_monitoring(
     scored: list[tuple[Listing, dict]], state: dict, as_of: date,
 ) -> tuple[list[tuple[Listing, dict]], list[tuple[Listing, dict]]]:
@@ -266,11 +284,21 @@ async def run(
         logger.warning(BUDGET_WARNING)
         await actor.status(BUDGET_WARNING)
 
-    http = await http_factory(run_input)
+    try:
+        http = await http_factory(run_input)
+    except ProxyAccessError as e:
+        return await _fail_proxy(actor, summary, started, e)
     try:
         return await _run(actor, run_input, summary, started, http, source_factory, rates_loader, as_of)
     finally:
         await http.close()
+
+
+async def _fail_proxy(actor: ActorPort, summary: dict, started: float, error: Exception) -> dict:
+    summary.update(status="failed", reason=str(error))
+    await save_summary(actor, summary, started)
+    await actor.fail(f"{error} No results were produced and no result events were charged.")
+    return summary
 
 
 async def _run(
@@ -293,6 +321,8 @@ async def _run(
 
     try:
         rates, fx_date = await rates_loader(http)
+    except ProxyAccessError as e:
+        return await _fail_proxy(actor, summary, started, e)
     except Exception as e:
         summary.update(status="failed", reason=f"ECB rates unavailable ({type(e).__name__})")
         await save_summary(actor, summary, started)
@@ -305,7 +335,10 @@ async def _run(
     outputs: dict[str, CityOutput] = {}
     for city_key in run_input.cities:
         await actor.status(f"Fetching {CITIES[city_key].display_name}...")
-        city = await fetch_city(http, source, city_key, run_input, as_of)
+        try:
+            city = await fetch_city(http, source, city_key, run_input, as_of)
+        except ProxyAccessError as e:
+            return await _fail_proxy(actor, summary, started, e)
         city_summary = {"status": city.status, "reason": city.reason, "sides": city.sides}
         summary["cities"][city_key] = city_summary
         if city.status != "ok":
@@ -328,17 +361,26 @@ async def _run(
     state: dict | None = None
     unchanged: list[tuple[Listing, dict]] = []
     if run_input.only_new_or_changed and outputs:
-        state = await actor.load_state(run_input.state_key) or {}
-        scored, unchanged = apply_monitoring(scored, state, as_of)
-        summary["monitoring"] = {
-            "stateKey": run_input.state_key, "knownListings": len(state),
-            "new": sum(rec["changeType"] == "new" for _, rec in scored),
-            "priceCut": sum(rec["changeType"] == "priceCut" for _, rec in scored),
-            "unchanged": len(unchanged),
-        }
-        if not free_area and not charged_area and not scored:
+        try:
+            state = await actor.load_state(run_input.state_key) or {}
+        except Exception as e:  # e.g. the named store cannot be opened under limited permissions
+            logger.warning("Monitoring state unavailable (%s); running without state", type(e).__name__)
+            summary["monitoring"] = {
+                "stateKey": run_input.state_key, "stateAvailable": False,
+                "warning": f"Monitoring state could not be opened ({type(e).__name__}); "
+                           "the run returned all listings without change detection and saved no state.",
+            }
+        if state is not None:
+            scored, unchanged = apply_monitoring(scored, state, as_of)
+            summary["monitoring"] = {
+                "stateKey": run_input.state_key, "stateAvailable": True, "knownListings": len(state),
+                "new": sum(rec["changeType"] == "new" for _, rec in scored),
+                "priceCut": sum(rec["changeType"] == "priceCut" for _, rec in scored),
+                "unchanged": len(unchanged),
+            }
+        if state is not None and not free_area and not charged_area and not scored:
             # A quiet watchlist is a normal result for a scheduled run, not a failure.
-            await actor.save_state(run_input.state_key, update_state(state, _price_map(unchanged), as_of))
+            await save_state_safely(actor, summary, run_input.state_key, update_state(state, _price_map(unchanged), as_of))
             summary.update(status="ok", records={"areaYield": 0, "scoredListing": 0},
                            scoredAvailable=0, scoredReturned=0)
             await save_summary(actor, summary, started)
@@ -388,8 +430,12 @@ async def _run(
 
     # Order: free context first (never lost, never charged), then charged yields, then best deals first.
     await refresh_reports()
-    pushed_free, free_limit = await actor.push(free_area, None, on_groups)
-    pushed_area, area_limit = await actor.push(charged_area, AREA_YIELD_EVENT, on_groups)
+    # areaYield records go to the extra "yields" dataset so the default dataset (what run-sync-get-dataset-items
+    # returns) holds only scored listings; with mode yieldReport there is nothing else to return, so they stay default.
+    yields_dataset = YIELDS_DATASET if run_input.wants_scores else None
+    summary["yieldsDataset"] = yields_dataset or "default"
+    pushed_free, free_limit = await actor.push(free_area, None, on_groups, dataset=yields_dataset)
+    pushed_area, area_limit = await actor.push(charged_area, AREA_YIELD_EVENT, on_groups, dataset=yields_dataset)
     scored_records = [rec for _, rec in scored]
     pushed_scored, scored_limit = await actor.push(scored_records, SCORED_LISTING_EVENT, on_scored)
     limit_reached = free_limit or area_limit or scored_limit
@@ -398,8 +444,8 @@ async def _run(
         # Listings held back by the cost limit or the cap stay unseen, so the next run still delivers them.
         observed = scored[:pushed_scored] + unchanged
         new_state = update_state(state, _price_map(observed), as_of)
-        await actor.save_state(run_input.state_key, new_state)
-        summary["monitoring"].update(heldBack=scored_available - pushed_scored, savedListings=len(new_state))
+        saved = await save_state_safely(actor, summary, run_input.state_key, new_state)
+        summary["monitoring"].update(heldBack=scored_available - pushed_scored, savedListings=len(new_state) if saved else 0)
 
     failed = [k for k, v in summary["cities"].items() if v["status"] != "ok"]
     summary.update(

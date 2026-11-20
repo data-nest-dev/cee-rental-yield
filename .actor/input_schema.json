@@ -188,19 +188,13 @@
             "sectionCaption": "Proxy",
             "title": "Proxy configuration",
             "type": "object",
-            "description": "Proxy used to reach the listing portal. For Polish residential IPs choose the RESIDENTIAL group and country Poland.",
+            "description": "Proxy used to reach the listing portal. The default is Apify Proxy in automatic mode, which uses the proxy groups available to your account. You can pass your own proxyConfiguration instead.",
             "editor": "proxy",
             "default": {
-                "useApifyProxy": true,
-                "apifyProxyGroups": [
-                    "BUYPROXIES94952"
-                ]
+                "useApifyProxy": true
             },
             "prefill": {
-                "useApifyProxy": true,
-                "apifyProxyGroups": [
-                    "BUYPROXIES94952"
-                ]
+                "useApifyProxy": true
             }
         }
     }

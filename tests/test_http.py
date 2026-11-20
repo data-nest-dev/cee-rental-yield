@@ -123,3 +123,24 @@ async def test_static_proxy_url_still_used_without_provider() -> None:
     await client.get(URL)
     assert fake.proxies == ["http://static.proxy"]
     assert client.window(DOMAIN).sessions == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [407, 597])
+async def test_proxy_refusal_status_raises_proxy_access_error_without_retrying(status: int) -> None:
+    client, fake = _proxied_client([status, 200])
+    client.start_window(DOMAIN, "w")
+    with pytest.raises(http_mod.ProxyAccessError, match="no access to the selected proxy group"):
+        await client.get(URL)
+    assert len(fake.proxies) == 1
+
+
+@pytest.mark.asyncio
+async def test_connect_tunnel_failure_with_proxy_raises_proxy_access_error() -> None:
+    client, fake = _proxied_client([])
+
+    async def boom(url: str, **kwargs):
+        raise RuntimeError("CONNECT tunnel failed, response 407")
+    fake.get = boom  # type: ignore[method-assign]
+    with pytest.raises(http_mod.ProxyAccessError):
+        await client.get(URL)

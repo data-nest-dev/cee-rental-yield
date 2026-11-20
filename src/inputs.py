@@ -10,7 +10,9 @@ SAMPLING_MODES = ("perDistrict", "city")
 ROOM_BUCKETS = ("1", "2", "3", "4+")
 STATE_KEY_RE = re.compile(r"^[A-Za-z0-9_.-]{1,100}$")
 
-DEFAULT_PROXY = {"useApifyProxy": True, "apifyProxyGroups": ["BUYPROXIES94952"]}
+# Automatic mode: each user's run uses the proxy groups of their own account (dedicated groups such as the
+# author's datacenter group are usable only by their owner, so none is named here).
+DEFAULT_PROXY = {"useApifyProxy": True}
 # Same values as `prefill` in .actor/input_schema.json (Apify's daily test input); a test keeps them in sync.
 PREFILL_INPUT = {
     "cities": ["warszawa"],

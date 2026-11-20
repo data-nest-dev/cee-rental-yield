@@ -1,0 +1,19 @@
+{
+    "actorOutputSchemaVersion": 1,
+    "title": "Rental yield and scored listings",
+    "description": "Scored listings are in the default dataset (mode yieldReport puts the yield rows there instead). Yield rows per district and room count are in the Rental yield dataset.",
+    "properties": {
+        "scoredListings": {
+            "type": "string",
+            "title": "Scored listings",
+            "description": "Apartments for sale with deal score, best deals first (default dataset).",
+            "template": "{{links.apiDefaultDatasetUrl}}/items"
+        },
+        "rentalYield": {
+            "type": "string",
+            "title": "Rental yield by district",
+            "description": "Gross rental yield per district and room count (areaYield records; in mode yieldReport they are in the default dataset).",
+            "template": "{{storages.datasets.yields.apiUrl}}/items"
+        }
+    }
+}
