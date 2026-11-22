@@ -15,7 +15,7 @@ Asking prices and advertised rents, honestly labelled. Gross, not net.
 3. Click **Start**.
 4. Download the results as Excel, CSV or JSON from the Output tab. Yield groups are in the `yields` dataset, except in `yieldReport` mode, where they are in the default dataset.
 
-The first run with the default example (prefill: Warsaw, the 360 newest listings) costs about $1.5 and takes under a minute.
+The first run with the default example (prefill: Warsaw, the 360 newest listings) costs about $1.70 and takes under a minute.
 
 ## What you get
 
