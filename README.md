@@ -1,7 +1,6 @@
-# Poland Rental Yield & Property Deal Score
+# Otodom Rental Yield & Deal Score – Poland
 
-Where does a rental apartment earn the most, and which listing is priced below its neighbourhood?
-One run samples both sides of the local market – apartments for sale and for long-term rent – and returns:
+Analyse Polish real estate from Otodom listings: find the rental yield in Poland by district and spot flats priced below their neighbourhood, whether you are a buy-to-let investor or an analyst. Covers Warsaw, Kraków and Wrocław. One run samples apartments for sale and for long-term rent and returns:
 
 - **Gross rental yield per district and room count**, with medians, quartiles and sample sizes.
 - **A 0–100 deal score for every listing for sale**, against the median price per m² of comparable flats.
@@ -9,7 +8,14 @@ One run samples both sides of the local market – apartments for sale and for l
 
 Asking prices and advertised rents, honestly labelled. Gross, not net.
 
-Currently covers Warsaw, Kraków and Wrocław (Poland).
+## How to use it without code
+
+1. Open the Actor in Apify Console.
+2. Choose the cities and the mode: `yieldReport`, `scoreListings` or `both`.
+3. Click **Start**.
+4. Download the results as Excel, CSV or JSON from the Output tab. Yield groups are in the `yields` dataset, except in `yieldReport` mode, where they are in the default dataset.
+
+The first run with the default example (prefill: Warsaw, the 360 newest listings) costs about $1.5 and takes under a minute.
 
 ## What you get
 
@@ -146,7 +152,7 @@ Pay per result:
 
 City-level context records (low confidence) are free.
 
-By default a run returns at most 1,000 scored listings, best deals first (`maxScoredListings`; 0 = all). Example from a test run (November 2026, Apify run `3cFnNnMtkzpmtPDIb`): Warsaw and Kraków with default settings returned 109 yield groups, of which 107 were charged ($2.14; the 2 city-level context groups are free), and 1,000 scored listings ($4.00), **$6.14** in total. Kraków alone costs up to about $5. With `maxScoredListings: 0` the default run scores all of its about 6,150 listings (about $26.74 in total).
+By default a run returns at most 1,000 scored listings, best deals first (`maxScoredListings`; 0 = all). Example from a test run (November 2026, Apify run `3cFnNnMtkzpmtPDIb`): Warsaw and Kraków with default settings returned 109 yield groups, of which 107 were charged ($2.14; the 2 city-level context groups are free), and 1,000 scored listings ($4.00), **$6.14** in total. Kraków alone costs up to about $5. With `maxScoredListings: 0` the default run scores all of its about 5,600 listings (about $24.50 in total).
 
 To spend less: `mode: "yieldReport"` returns only the yield groups (about $2 for Warsaw and Kraków); `maxScoredListings`, `minScore` and `rooms` reduce the number of scored listings; and you can set a maximum charge per run. When that maximum is close, the run stops cleanly, staying below it, after delivering free city-level context, the yield groups and the best-scored listings first.
 
@@ -174,8 +180,15 @@ To spend less: `mode: "yieldReport"` returns only the yield groups (about $2 for
 
 **How often should I run it?** Daily monitoring catches new listings and price cuts; a full report weekly is enough to follow yields.
 
+## Roadmap
+
+- More Polish cities (Gdańsk, Poznań, Łódź).
+- Czech Republic.
+- Missing a city or a metric? Open an issue on the Issues tab – requests decide what comes next.
+
 ## Data sources and responsible use
 
 - Data comes from Otodom search-result pages only, which its robots.txt allows. Listing detail pages are never opened.
 - At most one request per second to each website.
 - No personal data is collected or stored; each result links to the original listing instead of copying it.
+- This Actor is independent and not affiliated with or endorsed by Otodom.

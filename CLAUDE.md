@@ -59,7 +59,6 @@ Repo: `https://github.com/data-nest-dev/cee-rental-yield` · Właściciel: datan
     10. **Publikacja (2026-11-20).** Actor opublikowany w Apify Store (`isPublic: true`, build 0.0.25, commit `9442cd6`); Store Publishing Terms zaakceptowane. Weryfikacja pełnego defaultu po publikacji — run `el6ZwdJPWZn5A0NVf` (input `{}`, Warszawa + Kraków, `perDistrict`): 294 s, 106 yieldów (104 płatne) + 1000 ofert = $6,08, 212 zapytań, 2 blokady (0,9%), `identicalMerged` 273 / 235, `suspectRooms` zaobserwowane (1), koszt platformy $0,0155.
     11. **Drugie konto Apify: nie zakładamy** (General Terms 4.3 zakazują wielu kont osobistych bez zgody Apify). Zachowanie u innych użytkowników (proxy, blokady) weryfikujemy przez Insights i Issues; zastępuje to „test z drugiego konta” z punktów 15.2–15.3 i z M4.
     12. **Prefill a auto-test Apify:** codzienny test używa wartości `prefill` z input schema (docs: platform/actors/publishing/test), limit 5 min. **Nie zmieniać prefill na cięższy input.**
-    13. **TODO (niski priorytet, przy następnym buildzie):** README, sekcja Pricing, zdanie o `maxScoredListings: 0` — zamiast „about 6,150 listings (about $26.74)” wpisać „about 5,600 listings (about $24.50)” (po scalaniu identycznych ofert; run `el6ZwdJPWZn5A0NVf`: `scoredAvailable` 5600).
 
 **Po stronie właściciela (nie Claude Code):**
 - zaakceptować brief M3 (albo odesłać poprawki),
