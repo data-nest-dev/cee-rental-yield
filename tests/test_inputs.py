@@ -96,3 +96,22 @@ def test_console_prefill_json_is_recognised_as_prefill_run() -> None:
     }
     assert is_prefill_run(parse_input(console))
     assert not is_prefill_run(parse_input({}))
+
+
+def test_store_task_inputs_in_docs_are_valid() -> None:
+    import json
+    import re
+    from pathlib import Path
+
+    import pytest
+
+    jsonschema = pytest.importorskip("jsonschema")
+    root = Path(__file__).parent.parent
+    schema = json.loads((root / ".actor" / "input_schema.json").read_text())
+    text = (root / "docs" / "store-tasks.md").read_text()
+    inputs = [json.loads(b) for b in re.findall(r"```json\n(.*?)\n```", text, re.S)]
+    assert len(inputs) == 2
+    for raw in inputs:
+        assert not list(jsonschema.Draft7Validator(schema).iter_errors(raw))
+        assert set(raw) <= set(schema["properties"])
+        parse_input(raw)

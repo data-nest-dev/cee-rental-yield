@@ -1,12 +1,27 @@
 # Otodom Rental Yield & Deal Score – Poland
 
-Analyse Polish real estate from Otodom listings: find the rental yield in Poland by district and spot flats priced below their neighbourhood, whether you are a buy-to-let investor or an analyst. Covers Warsaw, Kraków, Wrocław, Łódź, Poznań and Gdańsk. One run samples apartments for sale and for long-term rent and returns:
+This Actor calculates the price per m² by district and the gross rental yield by district and room count, and gives every flat for sale a deal score, using Otodom listings for Warsaw, Kraków, Wrocław, Łódź, Poznań and Gdańsk. Prices are in EUR and PLN. Use it for rental yield in Poland, price per m² by district and spotting flats priced below their neighbourhood, whether you are a buy-to-let investor or an analyst. One run samples apartments for sale and for long-term rent and returns:
 
 - **Gross rental yield per district and room count**, with medians, quartiles and sample sizes.
 - **A 0–100 deal score for every listing for sale**, against the median price per m² of comparable flats.
 - **Everything in EUR** (ECB daily rate) next to the local currency, so cities compare directly.
 
 Asking prices and advertised rents, honestly labelled. Gross, not net.
+
+## Example output
+
+Six rows of a yield report for Łódź (Apify run `kXpCp4wihublvax0d`, ECB rate 4.4588 PLN per EUR):
+
+| District | Rooms | Confidence | Sales / rents (sample) | Sale median EUR/m² | Rent median EUR/m²/mo | Gross yield |
+|---|---|---|---|---|---|---|
+| Śródmieście | 1 | medium | 24 / 67 | 2195 | 16.4 | 8.99% |
+| Bałuty | 1 | high | 45 / 38 | 1951 | 12.5 | 7.67% |
+| Górna | 1 | high | 41 / 23 | 2063 | 13.5 | 7.83% |
+| Polesie | 2 | high | 124 / 101 | 2176 | 12.2 | 6.74% |
+| Widzew | 3 | high | 71 / 29 | 1962 | 10.2 | 6.21% |
+| Bałuty | 3 | high | 77 / 29 | 2007 | 9.3 | 5.53% |
+
+Data from 2026-11-23, asking prices; an excerpt of the 20 groups returned for Łódź.
 
 ## How to use it without code
 
@@ -81,6 +96,16 @@ More inputs are under *Example inputs* below.
 - **Yield groups** (`areaYield` records) go to a second dataset named `yields`. It is linked from the run's Output tab and listed in the Storage tab; its API URL is in the run's `output`. Keeping them apart means a call that reads only the default dataset gets listings that all have the same shape.
 - **Exception:** with `mode: "yieldReport"` there are no scored listings, so the yield groups stay in the default dataset. Otherwise that call would return an empty response.
 - **`YIELD_REPORT`** in the key-value store always holds the groups of the run, whatever the mode.
+
+## For AI agents
+
+Call the Actor `data-nest/cee-rental-yield` from an agent or over MCP with a small input, for example one city in yield-report mode:
+
+```json
+{"cities": ["lodz"], "mode": "yieldReport"}
+```
+
+The result is a list of `areaYield` records in the default dataset, one per district and room group, with `city`, `district`, `rooms`, `groupLevel`, `confidence`, `saleCount`, `rentCount`, `salePricePerM2Eur.median`, `rentPerM2MonthlyEur.median`, `grossYieldPct`, `local.currency` and `fx.date`. Set a maximum charge per run to cap the cost.
 
 ## Output
 
@@ -172,6 +197,19 @@ By default a run returns at most 1,000 scored listings, best deals first (`maxSc
 To spend less: `mode: "yieldReport"` returns only the yield groups (about $2 for Warsaw and Kraków); `maxScoredListings`, `minScore` and `rooms` reduce the number of scored listings; and you can set a maximum charge per run. When that maximum is close, the run stops cleanly, staying below it, after delivering free city-level context, the yield groups and the best-scored listings first.
 
 **Very low maximum charge.** The Actor collects the whole sample before it returns any result. If your maximum charge per run is too low to justify that (below about $0.03 with default settings), the run uses a smaller sample instead: the first city in your list, the 360 newest listings for sale and for rent, whole-city comparison. The run still succeeds and returns free city-level context plus what your limit covers (for example 2 scored listings at $0.01), never an event type you did not ask for, and `RUN_SUMMARY` shows `budgetReduced: true`. **Recommended minimum for the default run: $0.05.**
+
+## What a report costs
+
+A report (`mode: "yieldReport"`) is charged only for yield groups: $0.02 per `area-yield` event at the Free plan price. No `scored-listing` events are charged in this mode, and city-level context groups (low confidence) are free. Apify adds its own start event of $0.00005 per run.
+
+| City | Yield groups in a recent run | About |
+|---|---|---|
+| Łódź | 20 | 20 × $0.02 = $0.40 |
+| Poznań | 21 | 21 × $0.02 = $0.42 |
+| Wrocław | 23 | 23 × $0.02 = $0.46 |
+| Gdańsk | 29 | 29 × $0.02 = $0.58 |
+
+These are upper bounds: free groups are not charged. Prices fall on higher Apify plans: for `area-yield`, $0.019 on Bronze, $0.018 on Silver and $0.017 on Gold.
 
 ## Limitations
 

@@ -67,3 +67,11 @@ def test_every_record_validates_against_default_dataset_fields(mode: str) -> Non
     for rec in records:
         assert not list(validator.iter_errors(rec)), (rec["recordType"], [e.message for e in validator.iter_errors(rec)])
 
+
+
+@pytest.mark.parametrize("schema_file", ["dataset_schema.json", "yields_dataset_schema.json"])
+def test_yield_view_shows_the_documented_columns(schema_file: str) -> None:
+    fields = _schema(schema_file)["views"]["yields"]["transformation"]["fields"]
+    expected = {"city", "district", "rooms", "groupLevel", "confidence", "saleCount", "rentCount",
+                "salePricePerM2Eur.median", "rentPerM2MonthlyEur.median", "grossYieldPct", "local.currency", "fx.date"}
+    assert expected <= set(fields)

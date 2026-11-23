@@ -427,11 +427,15 @@
                     "saleCount",
                     "rentCount",
                     "confidence",
-                    "groupLevel"
+                    "groupLevel",
+                    "local.currency",
+                    "fx.date"
                 ],
                 "flatten": [
                     "salePricePerM2Eur",
-                    "rentPerM2MonthlyEur"
+                    "rentPerM2MonthlyEur",
+                    "local",
+                    "fx"
                 ]
             },
             "display": {
@@ -475,6 +479,14 @@
                     },
                     "groupLevel": {
                         "label": "Compared at",
+                        "format": "text"
+                    },
+                    "local.currency": {
+                        "label": "Local currency",
+                        "format": "text"
+                    },
+                    "fx.date": {
+                        "label": "ECB rate date",
                         "format": "text"
                     }
                 }
