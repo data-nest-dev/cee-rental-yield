@@ -66,6 +66,12 @@ Repo: `https://github.com/data-nest-dev/cee-rental-yield` · Właściciel: datan
     17. **Strona z danymi na datanest.dev (decyzja).** EN `/en/rental-yield-poland-2026-11`, PL `/rentownosc-najmu-2026-11` (PL jest domyślny i żyje w korzeniu; `/pl/...` przekierowuje 301), z danych obu runów (16 i 15.10). Strona jest budowana w osobnym repo strony.
     18. **Strona z danymi wdrożona (2026-11-23).** Działa na `https://datanest.dev/en/rental-yield-poland-2026-11` i `https://datanest.dev/rentownosc-najmu-2026-11`, zweryfikowane z zewnątrz. Link w stopce strony głównej (PL → wersja PL, EN/IT/CS → wersja EN). Dane: Warszawa i Kraków z runu `el6ZwdJPWZn5A0NVf`, Wrocław z runu `pLzS2i9iD5kwTW684`, razem 129 grup; yield brutto: Wrocław 5,68%, Warszawa 5,26%, Kraków 5,01%. Strona nie jest w tym repo: hostowana na NAS właściciela, zmiany przez paczki tar.gz z czatu; Claude Code nie pracuje przy stronie. Na stronie poprawiono `APIFY_PROFILE_URL` z `https://apify.com/pl-datanest` na `https://apify.com/data-nest`. Metoda na stronie mówi wprost: czynsz najmu bez czynszu administracyjnego (zgodnie z `src/sources/otodom.py:592`). Promocja: Wykop odpada; Reddit i inne kanały do zbadania w kolejnej rozmowie.
 
+    19. **Promocja (2026-11-23).**
+        - Link z README do datanest.dev: **NIE.** Store Publishing Terms 2.2.4.2(i) zakazują linkowania i promowania produktów lub usług poza platformą w Actorze, readme, opisie, issues i recenzjach. Strona datanest.dev linkująca do Actora jest OK.
+        - 2026-11-23: wysłane pitche z danymi do redakcji Bankier.pl, direct.money.pl i Bezprawnik. Jednorazowy follow-up ok. 2026-11-30.
+        - Opublikowany post na Discordzie Apify (#actor-promotion). Konto Reddit Datanest założone, rozgrzewanie 1–2 tygodnie bez linków. r/Polska i Wykop odpadają.
+        - Decyzja: Łódź, Gdańsk i Poznań dodajemy przed 2026-12-06, bo redakcje porównują 8 miast. Kolejny kandydat: osobny Actor dla Imovirtual (Portugalia, ta sama platforma OLX co Otodom) — po sprawdzeniu `robots.txt` i struktury danych.
+
 **Po stronie właściciela (nie Claude Code):**
 - zaakceptować brief M3 (albo odesłać poprawki),
 - podpiąć repo w Apify jako prywatny Actor (Source type: Git repository) — kroki w briefie M3,
