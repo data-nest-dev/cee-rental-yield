@@ -69,8 +69,16 @@ Repo: `https://github.com/data-nest-dev/cee-rental-yield` · Właściciel: datan
     19. **Promocja (2026-11-23).**
         - Link z README do datanest.dev: **NIE.** Store Publishing Terms 2.2.4.2(i) zakazują linkowania i promowania produktów lub usług poza platformą w Actorze, readme, opisie, issues i recenzjach. Strona datanest.dev linkująca do Actora jest OK.
         - 2026-11-23: wysłane pitche z danymi do redakcji Bankier.pl, direct.money.pl i Bezprawnik. Jednorazowy follow-up ok. 2026-11-30.
-        - Opublikowany post na Discordzie Apify (#actor-promotion). Konto Reddit Datanest założone, rozgrzewanie 1–2 tygodnie bez linków. r/Polska i Wykop odpadają.
+        - Opublikowany post na Discordzie Apify (#actor-promotion). Reddit: posty i komentarze odłożone („odpada na razie”); to, czy konto Reddit Datanest jest założone, do potwierdzenia przez właściciela. Wykop odpada.
         - Decyzja: Łódź, Gdańsk i Poznań dodajemy przed 2026-12-06, bo redakcje porównują 8 miast. Kolejny kandydat: osobny Actor dla Imovirtual (Portugalia, ta sama platforma OLX co Otodom) — po sprawdzeniu `robots.txt` i struktury danych.
+
+    20. **Nowe miasta na produkcji (2026-11-23).**
+        - Łódź, Gdańsk i Poznań obsługiwane od buildu 0.0.27 (commit `0114428`). Build 0.0.28 (`be08952`): README z sekcją „Yields by city” dla 6 miast. Opis i SEO description w Store zaktualizowane do 6 miast.
+        - Runy referencyjne (`yieldReport`, `perDistrict`): Łódź `kXpCp4wihublvax0d` (20 grup), Poznań `rRVZoTR9h7cuUzN7u` (21), Gdańsk `x3WHfYyPk9sKsSNhk` (29; `maxListingsPerSide` 3000, bo Otodom ma tam 32 dzielnice). Łódź i Poznań mają po 5 dzielnic.
+        - Strona z danymi na datanest.dev zaktualizowana do 6 miast i 199 grup (paczka 2026-11-23c).
+        - **ZASADA:** runów na Otodom nigdy nie uruchamiamy równolegle. Limit 1 zapytania/s obowiązuje na domenę łącznie, także między runami (2026-11-23 dwa równoległe runy przerwano).
+        - **ZASADA:** weryfikacja na żywo zawsze przez ścieżkę kodu Actora (nie osobny skrypt) i z zapytaniem kontrolnym dla miasta, które na pewno działa. Przyczyną 404 z 2026-11-23 był skrypt z `sale` zamiast `sprzedaz`.
+        - Wersja Actora ma w Apify `githubWebhookId`, ale push nie uruchamia automatycznego buildu. Buildy nadal ręczne z Console.
 
 **Po stronie właściciela (nie Claude Code):**
 - zaakceptować brief M3 (albo odesłać poprawki),
