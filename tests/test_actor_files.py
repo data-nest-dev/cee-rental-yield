@@ -45,3 +45,10 @@ def test_actor_title_and_description_do_not_advertise_katowice() -> None:
     actor = _load("actor.json")
     assert actor["title"] == "Poland Rental Yield & Property Deal Score"
     assert "Katowice" not in actor["description"] and "scraper" not in actor["description"].lower()
+
+
+def test_actor_description_names_the_six_cities() -> None:
+    description = _load("actor.json")["description"]
+    for city in ("Warsaw", "Kraków", "Wrocław", "Łódź", "Poznań", "Gdańsk"):
+        assert city in description
+    assert len(description) <= 300

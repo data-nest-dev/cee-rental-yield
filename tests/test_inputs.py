@@ -115,3 +115,14 @@ def test_store_task_inputs_in_docs_are_valid() -> None:
         assert not list(jsonschema.Draft7Validator(schema).iter_errors(raw))
         assert set(raw) <= set(schema["properties"])
         parse_input(raw)
+
+
+def test_readme_agent_example_gives_per_district_yields() -> None:
+    import re
+
+    text = (Path(__file__).parent.parent / "README.md").read_text()
+    section = text.split("## For AI agents")[1].split("\n## ")[0]
+    raw = json.loads(re.search(r"```json\n(.*?)\n```", section, re.S).group(1))
+    run_input = parse_input(raw)
+    assert run_input.sampling_mode == "perDistrict" and run_input.mode == "yieldReport"
+    assert run_input.cities == ["lodz"]
