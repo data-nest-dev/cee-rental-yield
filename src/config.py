@@ -47,6 +47,30 @@ CITIES: dict[str, CityConfig] = {
         source="otodom",
         location_path="dolnoslaskie/wroclaw/wroclaw/wroclaw",
     ),
+    "lodz": CityConfig(
+        key="lodz",
+        display_name="Łódź",
+        country="PL",
+        currency="PLN",
+        source="otodom",
+        location_path="lodzkie/lodz/lodz/lodz",
+    ),
+    "gdansk": CityConfig(
+        key="gdansk",
+        display_name="Gdańsk",
+        country="PL",
+        currency="PLN",
+        source="otodom",
+        location_path="pomorskie/gdansk/gdansk/gdansk",
+    ),
+    "poznan": CityConfig(
+        key="poznan",
+        display_name="Poznań",
+        country="PL",
+        currency="PLN",
+        source="otodom",
+        location_path="wielkopolskie/poznan/poznan/poznan",
+    ),
 }
 
 OTODOM_TRANSACTION_MAP = {"sale": "sprzedaz", "rent": "wynajem"}

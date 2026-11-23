@@ -15,13 +15,19 @@
                     "warszawa",
                     "krakow",
                     "wroclaw",
-                    "katowice"
+                    "katowice",
+                    "lodz",
+                    "gdansk",
+                    "poznan"
                 ],
                 "enumTitles": [
                     "Warsaw",
                     "Kraków",
                     "Wrocław",
-                    "Katowice"
+                    "Katowice",
+                    "Łódź",
+                    "Gdańsk",
+                    "Poznań"
                 ]
             },
             "minItems": 1,
