@@ -73,7 +73,8 @@ class FakeActor:
         self.statuses.append(message)
 
     def records(self, record_type: str) -> list[dict]:
-        return [r for _, batch in self.pushed for r in batch if r["recordType"] == record_type]
+        seen: set[int] = set()  # the yieldReport copy to `yields` pushes the same objects again
+        return [r for _, batch in self.pushed for r in batch if r["recordType"] == record_type and not (id(r) in seen or seen.add(id(r)))]
 
 
 class FakeSource:
@@ -547,10 +548,17 @@ async def test_yields_dataset_routing_by_mode(mode: str, yields_alias: str | Non
         assert actor.by_dataset[yields_alias] and actor.records("areaYield") == [
             r for r in actor.by_dataset[yields_alias] if r["recordType"] == "areaYield"]
     if mode == "yieldReport":
-        assert set(actor.by_dataset) == {None} and summary["yieldsDataset"] == "default"
+        # default keeps the yields (API); `yields` gets a free copy for the Output tab view
+        assert set(actor.by_dataset) == {None, "yields"} and summary["yieldsDataset"] == "default"
+        assert actor.by_dataset["yields"] == actor.by_dataset[None]
+        charged = sum(len(b) for e, b in actor.pushed if e == "area-yield")
+        assert charged == summary["events"]["area-yield"]["pushed"] == summary["events"]["area-yield"]["chargeable"]  # copy never charged
     else:
         assert all(r["recordType"] == "scoredListing" for r in actor.by_dataset.get(None, []))
         assert actor.by_dataset.get(None) and summary["yieldsDataset"] == "yields"
+        ys = actor.by_dataset.get(yields_alias, [])
+        assert len({id(r) for r in ys}) == len(ys)  # no copy pass
+        assert all(r["recordType"] == "scoredListing" for r in actor.by_dataset[None])
 
 
 @pytest.mark.asyncio

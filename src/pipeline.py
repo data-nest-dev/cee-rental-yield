@@ -314,6 +314,15 @@ def _yields_dataset(run_input: RunInput) -> str | None:
     return YIELDS_DATASET if run_input.wants_scores else None
 
 
+async def _copy_yields_for_output_view(actor: ActorPort, delivered: list[dict]) -> None:
+    """mode yieldReport keeps the yields in the default dataset (API); this free copy fills the `yields` dataset
+    behind the Output tab's yield view. No event, no budget logic (capacity of an uncharged alias push is unlimited)."""
+    try:
+        await actor.push(delivered, None, None, dataset=YIELDS_DATASET)
+    except Exception as e:  # the copy is cosmetic: never fail a run that already delivered its results
+        logger.warning("Could not copy yield groups to the yields dataset (%s)", type(e).__name__)
+
+
 def _events_summary(actor: ActorPort, area_chargeable: int, area_pushed: int, scored_chargeable: int, scored_pushed: int) -> dict:
     return {
         AREA_YIELD_EVENT: {"chargeable": area_chargeable, "pushed": area_pushed, "charged": actor.charged_count(AREA_YIELD_EVENT)},
@@ -470,6 +479,8 @@ async def _run(
     scored_records = [rec for _, rec in scored]
     pushed_scored, scored_limit = await actor.push(scored_records, SCORED_LISTING_EVENT, on_scored)
     limit_reached = free_limit or area_limit or scored_limit
+    if yields_dataset is None:
+        await _copy_yields_for_output_view(actor, free_area[:pushed_free] + charged_area[:pushed_area])
 
     if state is not None:
         # Listings held back by the cost limit or the cap stay unseen, so the next run still delivers them.

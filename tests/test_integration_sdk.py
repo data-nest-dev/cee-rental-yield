@@ -91,3 +91,16 @@ def test_one_cent_limit_succeeds_with_free_context_and_two_listings(tmp_path: Pa
     assert [i["recordType"] for i in items] == ["scoredListing"] * 2
     assert yields and all(i["confidence"] == "low" for i in yields)
     assert _charged(summary) == Decimal("0.00805")
+
+
+def test_yield_report_copy_to_yields_dataset_is_not_charged(tmp_path: Path) -> None:
+    # mode yieldReport: yields stay in the default dataset (API) and are copied to `yields` for the Output view.
+    proc, storage = _run(tmp_path, {"input": {"cities": ["katowice"], "mode": "yieldReport"}, "replicate": 8}, "5")
+    assert proc.returncode == 0, proc.stderr[-2000:]
+    summary = _kv(storage, "default", "RUN_SUMMARY")
+    default, copy = _dataset(storage), _dataset(storage, "yields")
+    assert default and all(r["recordType"] == "areaYield" for r in default)
+    assert copy == default and summary["yieldsDataset"] == "default"
+    ev = summary["events"]
+    assert ev["area-yield"]["charged"] == ev["area-yield"]["chargeable"] > 0 and ev["scored-listing"]["charged"] == 0
+    assert _charged(summary) == Decimal("0.00005") + Decimal("0.02") * ev["area-yield"]["charged"]  # copy adds no charge

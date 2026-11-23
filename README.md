@@ -94,7 +94,7 @@ More inputs are under *Example inputs* below.
 
 - **Scored listings** go to the run's default dataset. This is what `run-sync-get-dataset-items`, the API "last run dataset items" endpoints and the Export button return.
 - **Yield groups** (`areaYield` records) go to a second dataset named `yields`. It is linked from the run's Output tab and listed in the Storage tab; its API URL is in the run's `output`. Keeping them apart means a call that reads only the default dataset gets listings that all have the same shape.
-- **Exception:** with `mode: "yieldReport"` there are no scored listings, so the yield groups stay in the default dataset. Otherwise that call would return an empty response.
+- **Exception:** with `mode: "yieldReport"` there are no scored listings, so the yield groups stay in the default dataset. Otherwise that call would return an empty response. The same groups are also copied to the `yields` dataset, so the yield view on the Output tab shows them.
 - **`YIELD_REPORT`** in the key-value store always holds the groups of the run, whatever the mode.
 
 ## For AI agents
@@ -235,9 +235,10 @@ These are upper bounds: free groups are not charged. Prices fall on higher Apify
 
 ## Roadmap
 
-- ~~More Polish cities (Gdańsk, Poznań, Łódź)~~ – done.
-- Czech Republic.
-- Missing a city or a metric? Open an issue on the Issues tab – requests decide what comes next.
+* ~~More Polish cities (Gdańsk, Poznań, Łódź)~~ – done.
+* More Polish cities (Katowice, Szczecin, Bydgoszcz, Lublin, Białystok) – next.
+* Portugal (Imovirtual) – next in line, once the Polish market is covered.
+* Missing a city or a metric? Open an issue on the Issues tab – requests decide what comes next.
 
 ## Data sources and responsible use
 
