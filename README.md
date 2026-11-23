@@ -1,6 +1,6 @@
 # Otodom Rental Yield & Deal Score – Poland
 
-Analyse Polish real estate from Otodom listings: find the rental yield in Poland by district and spot flats priced below their neighbourhood, whether you are a buy-to-let investor or an analyst. Covers Warsaw, Kraków and Wrocław. One run samples apartments for sale and for long-term rent and returns:
+Analyse Polish real estate from Otodom listings: find the rental yield in Poland by district and spot flats priced below their neighbourhood, whether you are a buy-to-let investor or an analyst. Covers Warsaw, Kraków, Wrocław, Łódź, Poznań and Gdańsk. One run samples apartments for sale and for long-term rent and returns:
 
 - **Gross rental yield per district and room count**, with medians, quartiles and sample sizes.
 - **A 0–100 deal score for every listing for sale**, against the median price per m² of comparable flats.
@@ -24,6 +24,21 @@ The first run with the default example (prefill: Warsaw, the 360 newest listings
 - **Sample transparency**: every yield record reports how recent its sample is (median age, oldest listing) and what share of all listings it covers.
 - **Two datasets**: scored listings in the default dataset, yield groups in a second dataset called `yields` (see *Where the results are*).
 - **Two reports in the key-value store**: `YIELD_REPORT` (all groups, all levels) and `RUN_SUMMARY` (what was fetched, rejected and charged, per city and market side).
+
+## Yields by city
+
+Gross rental yield from test runs in November 2026 (asking prices and advertised rents, medians):
+
+| City | Gross yield | Sale price, EUR/m² | Rent, EUR/month per m² |
+|---|---|---|---|
+| Łódź | 6.93% | 2,105 | 12.1 |
+| Poznań | 5.68% | 2,795 | 13.2 |
+| Wrocław | 5.68% | 3,028 | 14.3 |
+| Gdańsk | 5.51% | 3,257 | 15.0 |
+| Warsaw | 5.26% | 3,927 | 17.2 |
+| Kraków | 5.01% | 3,482 | 14.5 |
+
+The portal splits Wrocław, Łódź and Poznań into 5 large districts each and Gdańsk into 32 smaller ones (with the default minimum sample sizes about 12 of them are reported), so district-level results are not equally detailed across cities.
 
 ## Quick start
 
@@ -182,7 +197,7 @@ To spend less: `mode: "yieldReport"` returns only the yield groups (about $2 for
 
 ## Roadmap
 
-- More Polish cities (Gdańsk, Poznań, Łódź).
+- ~~More Polish cities (Gdańsk, Poznań, Łódź)~~ – done.
 - Czech Republic.
 - Missing a city or a metric? Open an issue on the Issues tab – requests decide what comes next.
 
