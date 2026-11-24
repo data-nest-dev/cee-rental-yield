@@ -238,7 +238,7 @@ async def test_charge_limit_stops_cleanly_with_free_records_and_best_deals() -> 
     assert actor.statuses[-1].startswith("Stopped at your maximum charge")
 
 
-MONITOR = {"cities": ["katowice"], "onlyNewOrChanged": True, "stateKey": "watch-1", "mode": "scoreListings"}
+MONITOR = {"cities": ["katowice"], "onlyNewOrChanged": True, "watchlistName": "watch-1", "mode": "scoreListings"}
 
 
 @pytest.mark.asyncio

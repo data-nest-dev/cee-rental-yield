@@ -40,7 +40,8 @@ def test_rooms_accept_strings_and_integers_and_dedupe_cities() -> None:
     ({"areaMin": 100, "areaMax": 50}, "smaller than"),
     ({"minScore": 101}, "between 0 and 100"),
     ({"maxListingsPerSide": True}, "integer"),
-    ({"stateKey": "a/b"}, "stateKey"),
+    ({"watchlistName": "a/b"}, "watchlistName"),
+    ({"stateKey": "a/b"}, "watchlistName"),
     ({"onlyNewOrChanged": "yes"}, "true or false"),
     ({"proxyConfiguration": "x"}, "must be an object"),
 ])
@@ -58,7 +59,7 @@ def test_schema_defaults_match_run_input_defaults() -> None:
         "minScore": d.min_score, "maxScoredListings": d.max_scored_listings,
         "includePrimaryMarket": d.include_primary_market,
         "minSaleSample": d.min_sale_sample, "minRentSample": d.min_rent_sample,
-        "onlyNewOrChanged": d.only_new_or_changed, "stateKey": d.state_key,
+        "onlyNewOrChanged": d.only_new_or_changed, "watchlistName": d.state_key,
         "proxyConfiguration": d.proxy_configuration,
     }
     assert set(SCHEMA) == set(expected)
@@ -126,3 +127,10 @@ def test_readme_agent_example_gives_per_district_yields() -> None:
     run_input = parse_input(raw)
     assert run_input.sampling_mode == "perDistrict" and run_input.mode == "yieldReport"
     assert run_input.cities == ["lodz"]
+
+
+def test_watchlist_name_and_legacy_alias() -> None:
+    assert parse_input({"watchlistName": "w1"}).state_key == "w1"
+    assert parse_input({"stateKey": "old"}).state_key == "old"
+    assert parse_input({"watchlistName": "new", "stateKey": "old"}).state_key == "new"
+    assert parse_input({}).state_key == "default"

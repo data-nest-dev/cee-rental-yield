@@ -175,7 +175,7 @@ Listings that are a share of a flat (`share`) or a court auction (`auction`) are
 
 ## Monitoring
 
-Set `onlyNewOrChanged: true` and schedule the Actor (for example daily). Each run returns only listings that are new, or at least 1% cheaper, since the last run with the same `stateKey`, marked `changeType: "new"` or `"priceCut"` with `priceCutPct`. Use one schedule per state key. Running more often than every few minutes rarely returns new listings; a daily schedule is recommended. Unchanged listings are neither returned nor charged.
+Set `onlyNewOrChanged: true` and schedule the Actor (for example daily). Each run returns only listings that are new, or at least 1% cheaper, since the last run with the same `watchlistName`, marked `changeType: "new"` or `"priceCut"` with `priceCutPct`. Use one schedule per watchlist name. Running more often than every few minutes rarely returns new listings; a daily schedule is recommended. Unchanged listings are neither returned nor charged.
 
 The monitoring memory is a named key-value store (`cee-rental-yield-state`) in your account. If it cannot be opened or written, the run does not fail: it returns the listings without change detection (`changeType` is `null`) or, when only the final save fails, keeps the results already delivered, and `RUN_SUMMARY.monitoring.warning` says what happened.
 

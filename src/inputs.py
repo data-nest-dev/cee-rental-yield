@@ -101,13 +101,14 @@ def parse_input(raw: dict | None) -> RunInput:
         min_sale_sample=_int(raw, "minSaleSample", d.min_sale_sample, 1, 10000),
         min_rent_sample=_int(raw, "minRentSample", d.min_rent_sample, 1, 10000),
         only_new_or_changed=_bool(raw, "onlyNewOrChanged", d.only_new_or_changed),
-        state_key=raw.get("stateKey", d.state_key),
+        # `stateKey` is the pre-2026-11-24 name of `watchlistName`, still accepted as an alias.
+        state_key=raw["watchlistName"] if raw.get("watchlistName") is not None else raw.get("stateKey", d.state_key),
         proxy_configuration=raw.get("proxyConfiguration", d.proxy_configuration),
     )
     if result.area_min >= result.area_max:
         raise InputError("Input 'areaMin' must be smaller than 'areaMax'.")
     if not isinstance(result.state_key, str) or not STATE_KEY_RE.match(result.state_key):
-        raise InputError("Input 'stateKey' may contain only letters, digits, '.', '_' and '-' (max 100).")
+        raise InputError("Input 'watchlistName' may contain only letters, digits, '.', '_' and '-' (max 100).")
     if result.proxy_configuration is not None and not isinstance(result.proxy_configuration, dict):
         raise InputError("Input 'proxyConfiguration' must be an object.")
     return result

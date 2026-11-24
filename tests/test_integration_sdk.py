@@ -70,7 +70,7 @@ def test_limit_mid_way_orders_yields_then_best_deals_and_stays_below_limit(tmp_p
 
 def test_listings_held_back_by_the_limit_are_not_marked_seen(tmp_path: Path) -> None:
     scenario = {"input": {"cities": ["katowice"], "mode": "scoreListings", "onlyNewOrChanged": True,
-                          "stateKey": "watch-1"}, "replicate": 8}
+                          "watchlistName": "watch-1"}, "replicate": 8}
     proc, storage = _run(tmp_path, scenario, "0.01")
     assert proc.returncode == 0, proc.stderr[-2000:]
     summary = _kv(storage, "default", "RUN_SUMMARY")

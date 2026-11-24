@@ -180,13 +180,13 @@
             "sectionDescription": "Run on a schedule and get only what changed.",
             "title": "Only new or cheaper listings",
             "type": "boolean",
-            "description": "Return only listings that are new or at least 1% cheaper since the last run with the same state key.",
+            "description": "Return only listings that are new or at least 1% cheaper since the last run with the same watchlist name.",
             "default": false
         },
-        "stateKey": {
-            "title": "State key",
+        "watchlistName": {
+            "title": "Watchlist name",
             "type": "string",
-            "description": "Name of the monitoring memory. Use a different key for each watchlist; letters, digits, '.', '_' and '-'.",
+            "description": "Name of the monitoring memory. Use a different name for each watchlist; letters, digits, '.', '_' and '-'.",
             "editor": "textfield",
             "default": "default"
         },

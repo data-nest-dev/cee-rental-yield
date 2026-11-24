@@ -7,7 +7,7 @@ Paste the full JSON into the Task input (the form would otherwise fill in the pr
 Recommended `maxTotalChargeUsd`: 2
 
 ```json
-{"areaMax":250,"areaMin":15,"cities":["lodz"],"includePrimaryMarket":true,"maxListingsPerDistrict":0,"maxListingsPerSide":1500,"maxScoredListings":1000,"minRentSample":10,"minSaleSample":15,"minScore":0,"mode":"yieldReport","onlyNewOrChanged":false,"proxyConfiguration":{"useApifyProxy":true},"rooms":["1","2","3","4+"],"samplingMode":"perDistrict","stateKey":"default"}
+{"areaMax":250,"areaMin":15,"cities":["lodz"],"includePrimaryMarket":true,"maxListingsPerDistrict":0,"maxListingsPerSide":1500,"maxScoredListings":1000,"minRentSample":10,"minSaleSample":15,"minScore":0,"mode":"yieldReport","onlyNewOrChanged":false,"proxyConfiguration":{"useApifyProxy":true},"rooms":["1","2","3","4+"],"samplingMode":"perDistrict","watchlistName":"default"}
 ```
 
 ## `rental-yield-poznan-gdansk` – "Rental yield by district – Poznań and Gdańsk"
@@ -15,5 +15,5 @@ Recommended `maxTotalChargeUsd`: 2
 Recommended `maxTotalChargeUsd`: 5
 
 ```json
-{"areaMax":250,"areaMin":15,"cities":["poznan","gdansk"],"includePrimaryMarket":true,"maxListingsPerDistrict":0,"maxListingsPerSide":3000,"maxScoredListings":1000,"minRentSample":10,"minSaleSample":15,"minScore":0,"mode":"yieldReport","onlyNewOrChanged":false,"proxyConfiguration":{"useApifyProxy":true},"rooms":["1","2","3","4+"],"samplingMode":"perDistrict","stateKey":"default"}
+{"areaMax":250,"areaMin":15,"cities":["poznan","gdansk"],"includePrimaryMarket":true,"maxListingsPerDistrict":0,"maxListingsPerSide":3000,"maxScoredListings":1000,"minRentSample":10,"minSaleSample":15,"minScore":0,"mode":"yieldReport","onlyNewOrChanged":false,"proxyConfiguration":{"useApifyProxy":true},"rooms":["1","2","3","4+"],"samplingMode":"perDistrict","watchlistName":"default"}
 ```
