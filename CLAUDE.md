@@ -95,6 +95,13 @@ Repo: `https://github.com/data-nest-dev/cee-rental-yield` · Właściciel: datan
         - Poprawka po buildzie 0.0.29: w `mode = yieldReport` yieldy zostają w datasecie default (API), a kopia (bez naliczania, bez wpływu na budżet) trafia też do `yields`, bo widok „Rental yield by district” w Output jest przypięty do `yields` (`src/pipeline.py:_copy_yields_for_output_view`). Roadmap w README zaktualizowany (kolejne polskie miasta, potem Portugalia; Czechy poza Roadmapem).
         - Przed buildem 0.0.29: README (przykład wyniku, koszt, sekcja dla agentów), dataset views (kolumny `local.currency`, `fx.date`), taski w `docs/store-tasks.md`; kategorie Store do ustawienia w Console.
 
+    23. **Stan 2026-11-24.**
+        - Kategorie w Apify Store przypisuje Apify automatycznie („Categories are auto-assigned based on your Actor”). Nie ustawiamy ich ręcznie i nie traktujemy „Uncategorized” w API jako błędu (zastępuje uwagę o kategoriach „do ustawienia w Console” z 15.22).
+        - Build 0.0.30 = commit `eb3d27f` (potwierdzone logiem buildu), oznaczony jako `latest`.
+        - Strony Tasków w Store: tabela z przykładowymi danymi („example dataset”) jest niedostępna (sekcja Dataset schema w Publishing ma tylko wybór datasetu i widoku). Decyzja: pomijamy. Taski `rental-yield-lodz` i `rental-yield-poznan-gdansk` mają dataset `yields` + widok „Rental yield by district” oraz FAQ (7 pytań, EN, dodane w Console). Taska Poznań+Gdańsk nie uruchamiamy (brak potrzeby).
+        - Promocja: 2026-11-24 wysłano pitche z danymi 6 miast do Business Insider Polska, Dziennika Łódzkiego, Głosu Wielkopolskiego, Trojmiasto.pl i PropertyNews.pl. Follow-up: 2026-12-01 (te 5) i 2026-11-30 (Bankier, direct.money, Bezprawnik).
+        - Monitoring publikacji naszych danych w mediach: cykliczne zadanie poza repo (pon i czw 9:17), szuka nazwy Datanest i par charakterystycznych liczb. Przy grudniowej aktualizacji danych podmienić liczby w jego poleceniu.
+
 **Po stronie właściciela (nie Claude Code):**
 - zaakceptować brief M3 (albo odesłać poprawki),
 - podpiąć repo w Apify jako prywatny Actor (Source type: Git repository) — kroki w briefie M3,
