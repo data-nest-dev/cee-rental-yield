@@ -307,7 +307,7 @@
                     "null"
                 ],
                 "title": "Sample",
-                "description": "Yield records: age and share of the sample (`sale`, `rent`)."
+                "description": "Yield records: age and share of the sample (`sale`, `rent`). `share` = fetched / `reachableItems`; `reachableItems` = the portal total minus `primaryMarketUnits` (flats inside development tiles, which the list shows as one tile each), never below the number fetched."
             },
             "sources": {
                 "type": [

@@ -26,14 +26,16 @@ def _item(slug: str, district: str, estate: str = "FLAT") -> dict:
 def _html(
     build_id: str,
     items: list[dict],
-    total_pages: int,
+    total_pages: int | None,
     districts: list[str] | None = None,
     sorting: tuple[str, str, int] = ("LATEST", "DESC", 72),
     total_items: int | None = None,
     market: str | None = None,
 ) -> str:
     by, direction, per_page = sorting
-    pagination = {"totalPages": total_pages, "itemsPerPage": per_page}
+    pagination = {"itemsPerPage": per_page}
+    if total_pages is not None:
+        pagination["totalPages"] = total_pages
     if total_items is not None:
         pagination["totalItems"] = total_items
     page_data: dict = {"searchAds": {"items": items, "pagination": pagination}}
@@ -48,8 +50,10 @@ def _html(
     return f'<script id="__NEXT_DATA__" type="application/json">{json.dumps(data)}</script>'
 
 
-def _json(items: list[dict], total_pages: int, total_items: int | None = None) -> str:
-    pagination: dict = {"totalPages": total_pages, "itemsPerPage": 72}
+def _json(items: list[dict], total_pages: int | None, total_items: int | None = None) -> str:
+    pagination: dict = {"itemsPerPage": 72}
+    if total_pages is not None:
+        pagination["totalPages"] = total_pages
     if total_items is not None:
         pagination["totalItems"] = total_items
     return json.dumps({"pageProps": {"data": {"searchAds": {
@@ -357,11 +361,11 @@ def _city_url(page: int) -> str:
 
 
 @pytest.mark.asyncio
-async def test_repeated_page_stops_pagination_after_two_stale_pages() -> None:
+async def test_repeated_page_stops_pagination_after_two_stale_pages_when_page_count_unknown() -> None:
     repeated = [_item(f"r{n}", "bogucice") for n in range(3)]
     http = FakeHttp({
-        f"https://www.otodom.pl/pl/wyniki/sprzedaz/mieszkanie/{CITY}": [(200, _html("B1", repeated, 106))],
-        "/_next/data/B1/": [(200, _json(repeated, 106))],  # page parameter ignored: same page every time
+        f"https://www.otodom.pl/pl/wyniki/sprzedaz/mieszkanie/{CITY}": [(200, _html("B1", repeated, None))],
+        "/_next/data/B1/": [(200, _json(repeated, None))],  # page parameter ignored: same page every time
     })
     items, stats = await OtodomSource(http).fetch_listings("katowice", "sale", 360)
 
@@ -372,10 +376,10 @@ async def test_repeated_page_stops_pagination_after_two_stale_pages() -> None:
 
 
 @pytest.mark.asyncio
-async def test_empty_pages_also_stop_pagination() -> None:
+async def test_empty_pages_also_stop_pagination_when_page_count_unknown() -> None:
     http = FakeHttp({
-        f"https://www.otodom.pl/pl/wyniki/sprzedaz/mieszkanie/{CITY}": [(200, _html("B1", [_item("a1", "dab")], 50))],
-        "/_next/data/B1/": [(200, _json([], 50))],
+        f"https://www.otodom.pl/pl/wyniki/sprzedaz/mieszkanie/{CITY}": [(200, _html("B1", [_item("a1", "dab")], None))],
+        "/_next/data/B1/": [(200, _json([], None))],
     })
     _, stats = await OtodomSource(http).fetch_listings("katowice", "sale", 360)
     assert len(http.calls) == 3 and stats["stopped_reason"] == "no_new_items"
@@ -495,3 +499,46 @@ async def test_learned_path_that_redirects_again_falls_back_to_html() -> None:
     })
     items, stats = await OtodomSource(http, market="SECONDARY").fetch_listings("katowice", "sale", 360)
     assert [it["slug"] for it in items] == ["a1", "a2", "a3"] and stats["fallback_to_html"] is True
+
+
+@pytest.mark.asyncio
+async def test_known_page_count_is_walked_to_the_end_past_pages_with_only_a_repeated_tile() -> None:
+    """Shape of the Szczecin diagnosis: a development tile fills pages 33-35 on its own, real listings resume on 36-38."""
+    tile = _item("tile-1", "dab", estate="INVESTMENT")
+    tile["id"] = 1001
+    ad = _item("hpr-ad", "dab")
+    ad["href"] = "hpr/ad"
+
+    def page(n: int) -> str:
+        if n <= 32:
+            return _json([_item(f"p{n}-{k}", "dab") for k in range(2)], 38)
+        if n <= 35:
+            return _json([tile], 38)
+        return _json([tile, ad] + [_item(f"p{n}-{k}", "dab") for k in range(3)], 38)
+
+    routes = {f"https://www.otodom.pl/pl/wyniki/sprzedaz/mieszkanie/{CITY}": [
+        (200, _html("B1", [_item("p1-0", "dab"), _item("p1-1", "dab")], 38))]}
+    for n in range(2, 39):
+        routes[_city_url(n)] = [(200, page(n))]
+    items, stats = await OtodomSource(FakeHttp(routes)).fetch_listings("katowice", "sale", 20000)
+
+    assert stats["pages_fetched"] == 38 and stats["stopped_reason"] == "last_page"
+    slugs = {it["slug"] for it in items}
+    assert {"p36-0", "p37-2", "p38-1"} <= slugs
+
+
+@pytest.mark.asyncio
+async def test_known_page_count_still_stops_at_the_listing_quota() -> None:
+    routes = {f"https://www.otodom.pl/pl/wyniki/sprzedaz/mieszkanie/{CITY}": [(200, _html("B1", [_item("a0", "dab")], 40))]}
+    for n in range(2, 41):
+        routes[_city_url(n)] = [(200, _json([_item(f"p{n}-{k}", "dab") for k in range(2)], 40))]
+    _, stats = await OtodomSource(FakeHttp(routes)).fetch_listings("katowice", "sale", 5)
+    assert stats["stopped_reason"] == "quota_reached" and stats["pages_fetched"] == 3
+
+
+def test_primary_market_units_are_summed_once_per_tile() -> None:
+    from src.sources.otodom import _primary_market_units
+    t1 = {"estate": "INVESTMENT", "id": 1, "investmentUnitsNumber": 134}
+    t2 = {"estate": "INVESTMENT", "id": 2, "investmentUnitsNumber": 30}
+    flat = {"estate": "FLAT", "id": 3, "investmentUnitsNumber": 99}
+    assert _primary_market_units([t1, dict(t1), t2, flat, {"estate": "INVESTMENT", "id": 4}]) == 164

@@ -22,9 +22,12 @@ from src.models import Listing
 logger = logging.getLogger(__name__)
 PROGRESS_EVERY = 25
 
-# Pagination stops after this many pages in a row that add no new unique listing (page parameter ignored,
-# repeated or empty pages), whatever the cause.
+# Safeguard only, for a first page without `totalPages`: pagination then stops after this many pages in a row
+# that add no new flat (page parameter ignored, repeated or empty pages). When the page count is known the Actor
+# walks to it: one development tile can fill several pages in a row (CLAUDE.md section 20.7).
 MAX_STALE_PAGES = 2
+# Upper bound on pages when the page count is unknown (the safeguard above normally stops far earlier).
+UNKNOWN_PAGES_CAP = 400
 
 ROOMS_MAP = {
     "ONE": 1, "TWO": 2, "THREE": 3, "FOUR": 4, "FIVE": 5,
@@ -112,7 +115,8 @@ class OtodomSource:
         stats["total_items"] = pagination.get("totalItems")
         all_items = list(page1_items)
 
-        city_page_limit = pagination.get("totalPages", 1)
+        pages_known = pagination.get("totalPages") is not None
+        city_page_limit = pagination.get("totalPages") if pages_known else UNKNOWN_PAGES_CAP
         if max_per_district is not None:
             # The district list makes city-wide discovery pages unnecessary.
             city_page_limit = 1 if district_list else min(city_page_limit, discovery_pages)
@@ -120,7 +124,7 @@ class OtodomSource:
         else:
             budget = max_listings
 
-        seen_city = {it.get("slug") for it in all_items if it.get("slug")}
+        seen_city = {it.get("slug") for it in all_items if it.get("slug") and _is_candidate(it)}
         stale_pages = 0
         stats["stopped_reason"] = "last_page"
         for page_num in range(2, city_page_limit + 1):
@@ -131,10 +135,10 @@ class OtodomSource:
             all_items.extend(page_items)
             stats["pages_fetched"] += 1
             stats["raw_items"] += len(page_items)
-            new = {it.get("slug") for it in page_items if it.get("slug")} - seen_city
+            new = {it.get("slug") for it in page_items if it.get("slug") and _is_candidate(it)} - seen_city
             seen_city |= new
             stale_pages = 0 if new else stale_pages + 1
-            if stale_pages >= MAX_STALE_PAGES:
+            if not pages_known and stale_pages >= MAX_STALE_PAGES:
                 stats["stopped_reason"] = "no_new_items"
                 logger.warning("Stopping %s %s pagination at page %d: %d pages in a row without a new listing",
                                city_key, transaction, page_num, MAX_STALE_PAGES)
@@ -167,12 +171,17 @@ class OtodomSource:
             page_num = 1
             total_pages = 1
             stale_pages = 0
+            known = True
             while counts.get(district, 0) < max_per_district and page_num <= total_pages:
                 page_items, pag = await self._fetch_page(district, tx, page_num, stats)
                 stats["pages_fetched"] += 1
                 stats["district_pages"] += 1
                 stats["raw_items"] += len(page_items)
-                total_pages = pag.get("totalPages", 0) if pag else 0
+                known = bool(pag) and pag.get("totalPages") is not None
+                if known:
+                    total_pages = pag["totalPages"]
+                else:  # unknown page count: the stale-page safeguard decides when to stop
+                    total_pages = UNKNOWN_PAGES_CAP if page_items else 0
                 if page_num == 1 and pag and pag.get("totalItems") is not None:
                     district_total_items[district] = pag["totalItems"]
                 added = 0
@@ -181,14 +190,14 @@ class OtodomSource:
                     if not slug or slug in seen:
                         continue
                     seen.add(slug)
-                    added += 1
+                    added += 1 if _is_candidate(it) else 0
                     all_items.append(it)
                     d = _district_id(it, cfg.location_path)
                     if d and _is_candidate(it):
                         counts[d] = counts.get(d, 0) + 1
                 page_num += 1
                 stale_pages = 0 if added else stale_pages + 1
-                if stale_pages >= MAX_STALE_PAGES:
+                if not known and stale_pages >= MAX_STALE_PAGES:
                     stats["stopped_reason"] = "no_new_items"
                     break
 
@@ -420,6 +429,20 @@ def _record_fetched(items: list[dict], city_location_path: str, stats: dict) -> 
             by_district[d[1]] = by_district.get(d[1], 0) + 1
     stats["fetched_items"] = len(seen)
     stats["fetched_by_district"] = by_district
+    stats["primary_market_units"] = _primary_market_units(items)
+
+
+def _primary_market_units(items: list[dict]) -> int:
+    """Flats inside development tiles (`INVESTMENT`), unique by tile id: the portal counts them in totalItems
+    although the list shows one tile per project, so they can never be fetched as separate listings."""
+    units: dict[str, int] = {}
+    for it in items:
+        if it.get("estate") != "INVESTMENT":
+            continue
+        n = it.get("investmentUnitsNumber")
+        if isinstance(n, int) and n > 0:
+            units[str(it.get("id"))] = n
+    return sum(units.values())
 
 
 def _district(raw: dict, city_location_path: str) -> tuple[str, str] | None:

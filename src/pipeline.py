@@ -100,7 +100,8 @@ async def fetch_city(http: HttpClient, source: OtodomSource, city_key: str, run_
         window = http.window(DOMAIN)
         requests = window.requests if window else 0
         blocked = window.blocked if window else 0
-        sample = sample_stats(cleaned, as_of, stats.get("fetched_items", 0), stats.get("total_items"))
+        sample = sample_stats(cleaned, as_of, stats.get("fetched_items", 0), stats.get("total_items"),
+                              stats.get("primary_market_units", 0))
         summary = build_side_summary(stats, rejected, clean_rejected, len(cleaned), requests, blocked, elapsed, sample=sample)
         ds = http.domain_stats.get(DOMAIN)
         summary.update({
@@ -124,6 +125,7 @@ async def fetch_city(http: HttpClient, source: OtodomSource, city_key: str, run_
         result.coverage[tx] = SideCoverage(
             fetched=stats.get("fetched_items", 0),
             total=stats.get("total_items"),
+            primary_market_units=stats.get("primary_market_units", 0),
             fetched_by_district=stats.get("fetched_by_district") or {},
             total_by_district=stats.get("district_total_items") or {},
         )

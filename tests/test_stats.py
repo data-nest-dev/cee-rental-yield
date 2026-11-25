@@ -247,7 +247,8 @@ class TestSampleAge:
         from src.stats import sample_stats
         s = sample_stats(self._aged([1, 3, 10, None]), self.AS_OF, fetched=300, total=1200)
         assert s == {"medianAgeDays": 3, "oldestListingDays": 10, "share": 0.25,
-                     "fetched": 300, "totalItems": 1200}
+                     "fetched": 300, "totalItems": 1200,
+                     "primaryMarketUnits": 0, "reachableItems": 1200}
 
     def test_unknown_total_and_no_dates(self) -> None:
         from src.stats import sample_stats
@@ -272,3 +273,28 @@ class TestSampleAge:
         assert district["rent"]["medianAgeDays"] == 6
         city = area_sample(groups["city_rooms"], self.AS_OF, cov)
         assert city["sale"]["share"] == 0.3 and city["rent"]["share"] == 0.5
+
+
+class TestReachableShare:
+    def test_units_in_development_tiles_leave_the_denominator(self) -> None:
+        from src.stats import sample_stats
+        s = sample_stats([], date(2026, 11, 18), fetched=2468, total=3131, primary_market_units=663)
+        assert (s["reachableItems"], s["primaryMarketUnits"], s["share"]) == (2468, 663, 1.0)
+
+    def test_reachable_never_below_fetched_and_share_capped_at_one(self) -> None:
+        from src.stats import sample_stats
+        s = sample_stats([], date(2026, 11, 18), fetched=900, total=1000, primary_market_units=500)
+        assert (s["reachableItems"], s["share"]) == (900, 1.0)
+
+    def test_without_tiles_share_is_as_before(self) -> None:
+        from src.stats import sample_stats
+        assert sample_stats([], date(2026, 11, 18), fetched=300, total=1200)["share"] == 0.25
+
+    def test_city_confidence_is_high_when_the_reachable_share_is_full(self) -> None:
+        from src.stats import FULL_SAMPLE_SHARE, SideCoverage, _confidence, sample_share
+        cov = {"sale": SideCoverage(2468, 3131, primary_market_units=663), "rent": SideCoverage(329, 329)}
+        share = sample_share(cov)
+        assert share == 1.0 and share >= FULL_SAMPLE_SHARE
+        assert _confidence("city", 2000, 300, share) == "high"
+        # same fetch without the tile correction would have been 0.79 -> low
+        assert sample_share({"sale": SideCoverage(2468, 3131), "rent": SideCoverage(329, 329)}) < FULL_SAMPLE_SHARE

@@ -212,6 +212,21 @@ class SideCoverage:
     total: int | None
     fetched_by_district: dict[str, int] = field(default_factory=dict)
     total_by_district: dict[str, int] = field(default_factory=dict)
+    primary_market_units: int = 0
+
+    def reachable(self) -> int | None:
+        return reachable_items(self.total, self.primary_market_units, self.fetched)
+
+    def share(self) -> float | None:
+        reach = self.reachable()
+        return min(self.fetched / reach, 1.0) if reach else None
+
+
+def reachable_items(total: int | None, primary_market_units: int, fetched: int) -> int | None:
+    """Listings that can be fetched one by one: the portal total minus the flats inside development tiles."""
+    if not total:
+        return None
+    return max(total - primary_market_units, fetched)
 
 
 def sample_stats(
@@ -219,15 +234,19 @@ def sample_stats(
     as_of: date,
     fetched: int,
     total: int | None,
+    primary_market_units: int = 0,
 ) -> dict:
     """Age of the sample (LATEST sorting samples current supply) and its share of all listings."""
+    reach = reachable_items(total, primary_market_units, fetched)
     ages = [max((as_of - ls.first_published).days, 0) for ls in listings if ls.first_published]
     return {
         "medianAgeDays": round(statistics.median(ages), 1) if ages else None,
         "oldestListingDays": max(ages) if ages else None,
-        "share": round(fetched / total, 3) if total else None,
+        "share": round(min(fetched / reach, 1.0), 3) if reach else None,
         "fetched": fetched,
         "totalItems": total,
+        "primaryMarketUnits": primary_market_units if total else None,
+        "reachableItems": reach,
     }
 
 
@@ -249,13 +268,13 @@ def area_sample(
                 cov.total_by_district.get(group.district or ""),
             )
         else:
-            result[side] = sample_stats(listings, as_of, cov.fetched, cov.total)
+            result[side] = sample_stats(listings, as_of, cov.fetched, cov.total, cov.primary_market_units)
     return result
 
 
 def sample_share(coverage: dict[str, SideCoverage]) -> float | None:
     """Share of the city's listings that was fetched: the smaller of the sale and rent side; None when unknown."""
-    shares = [c.fetched / c.total for c in coverage.values() if c.total]
+    shares = [c.share() for c in coverage.values() if c.total]
     return min(shares) if len(shares) == len(coverage) and shares else None
 
 

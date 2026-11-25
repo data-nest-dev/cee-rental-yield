@@ -36,7 +36,7 @@ The first run with the default example (prefill: Warsaw, the 360 newest listings
 
 - **Yield by district** (`areaYield` records): for every district × room group, the median sale price per m², the median monthly rent per m², quartiles, the number of listings behind each number, and the gross yield with a range. Groups with too few listings fall back to the city level and say so (`groupLevel`, `confidence`).
 - **Scored listings** (`scoredListing` records): for every apartment for sale, a 0–100 deal score, its discount against comparable flats, an estimated monthly rent and gross yield, and a link to the listing. Sorted best deal first.
-- **Sample transparency**: every yield record reports how recent its sample is (median age, oldest listing) and what share of all listings it covers.
+- **Sample transparency**: every yield record reports how recent its sample is (median age, oldest listing) and what share of all listings it covers. The share is measured against `reachableItems`, the portal's total minus `primaryMarketUnits` (flats inside development projects, which the portal lists as a single tile each); both numbers are in the `sample` block.
 - **Two datasets**: scored listings in the default dataset, yield groups in a second dataset called `yields` (see *Where the results are*).
 - **Two reports in the key-value store**: `YIELD_REPORT` (all groups, all levels) and `RUN_SUMMARY` (what was fetched, rejected and charged, per city and market side).
 
@@ -214,7 +214,7 @@ These are upper bounds: free groups are not charged. Prices fall on higher Apify
 ## Limitations
 
 - **Asking prices, not transaction prices.** Gross yield, not net (no taxes, vacancy, maintenance).
-- **The sample is current supply.** Listings are sampled newest first, so long-unsold stock is under-represented. Every yield record reports the sample's median age, oldest listing and share of all listings.
+- **The sample is current supply.** Listings are sampled newest first, so long-unsold stock is under-represented. Every yield record reports the sample's median age, oldest listing and share of reachable listings (`reachableItems`).
 - **Developer projects are counted, not scored.** Project tiles have no single price or area, and the few example units shown inside a tile are not representative; both are left out. Project counts appear in `RUN_SUMMARY`.
 - **New builds are not always recognised.** Developer listings that the portal does not link to a development are marked `isPrimaryMarket: null` (unknown), not `true`.
 - **Primary and secondary market are mixed by default.** With the default setting, price comparisons include both new builds from developers and resales, and `isPrimaryMarket` is `true` when the portal links the flat to a development and `null` (unknown) otherwise. Set `includePrimaryMarket` to `false` to request resales only; every record then has `isPrimaryMarket: false`.
