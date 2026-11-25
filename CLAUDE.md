@@ -683,3 +683,4 @@ Otwarte:
 
         - 2026-11-25: opublikowany Actor `data-nest/imovirtual-rental-yield` (osobne repo `imovirtual-rental-yield`). README Otodom linkuje do niego w Roadmapie (tylko URL apify.com).
         - Przypomnienie: outliers w `scoredListing` – poprawić przy grudniowym buildzie (jak w imovirtual: nie zwracać, nie naliczać; licznik osobno w `RUN_SUMMARY`).
+        - 2026-11-26: w README zanonimizowano URL oferty w przykładowym rekordzie (`"url": "…/pl/oferta/…"`; był tam pełny adres otodom.pl, a Store Publishing Terms 2.2.4.2(i) ograniczają linki poza apify.com). Inne domeny poza apify.com w README nie występowały. Roadmap w README linkuje do Actora Imovirtual (tylko URL apify.com).
