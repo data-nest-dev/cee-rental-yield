@@ -684,3 +684,19 @@ Otwarte:
         - 2026-11-25: opublikowany Actor `data-nest/imovirtual-rental-yield` (osobne repo `imovirtual-rental-yield`). README Otodom linkuje do niego w Roadmapie (tylko URL apify.com).
         - Przypomnienie: outliers w `scoredListing` – poprawić przy grudniowym buildzie (jak w imovirtual: nie zwracać, nie naliczać; licznik osobno w `RUN_SUMMARY`).
         - 2026-11-26: w README zanonimizowano URL oferty w przykładowym rekordzie (`"url": "…/pl/oferta/…"`; był tam pełny adres otodom.pl, a Store Publishing Terms 2.2.4.2(i) ograniczają linki poza apify.com). Inne domeny poza apify.com w README nie występowały. Roadmap w README linkuje do Actora Imovirtual (tylko URL apify.com).
+
+## 20. Grudniowa runda – plan (decyzje 2026-11-25)
+
+1. **Nowe miasta** (pomiar 2026-11-25; łączne oferty w portalu, pierwsza strona wyników, `market=ALL`):
+   - pełna obsługa (≥ 300 ofert najmu): Katowice 765, Szczecin 562, Gdynia 488, Rzeszów 425, Lublin 384, Bydgoszcz 329;
+   - całe miasto i liczba pokoi (150–300 ofert najmu; README: dzielnice ograniczone): Bielsko-Biała 223, Gliwice 216, Częstochowa 189, Białystok 188, Toruń 180;
+   - odrzucone (< 150): Kielce 143 i mniejsze, Olsztyn 61, Elbląg 12. Olsztyn (457 sprzedaży) ma podejrzanie mało — sprawdzić slug przed ostatecznym odrzuceniem.
+   - **Reguła na przyszłość:** ≥ 300 ofert najmu = pełna obsługa, 150–300 = całe miasto i liczba pokoi, < 150 = nie dodajemy.
+   - Wyniki pomiaru: `scripts/out/city-counts-2026-11-25.csv` i `scripts/out/city-counts-2026-11-25b.csv` (nieśledzone).
+2. **Slugi Otodom:** `{województwo}/{miasto}/{miasto}/{miasto}`, ASCII bez polskich znaków, spacja → „-”, **łącznik w nazwie → „--”** w każdym segmencie, w którym występuje (`kujawsko--pomorskie`, `warminsko--mazurskie`, `slaskie/bielsko--biala/bielsko--biala/bielsko--biala`). Działające slugi nowych miast (każdy rozwinięty do 4 segmentów): `zachodniopomorskie/szczecin`, `lubelskie/lublin`, `kujawsko--pomorskie/bydgoszcz`, `podlaskie/bialystok`, `slaskie/katowice`, `pomorskie/gdynia`, `slaskie/czestochowa`, `podkarpackie/rzeszow`, `kujawsko--pomorskie/torun`, `slaskie/gliwice`, `slaskie/bielsko--biala`.
+3. **Błędy do poprawy w grudniowym buildzie:**
+   a) `HttpClient.get` ma `allow_redirects=True`, więc przekierowanie omija limiter i nie jest liczone. Obsługiwać przekierowania ręcznie przez limiter, jak w `imovirtual-rental-yield` (maks. 1 skok, ta sama domena, cel pod `/pl/wyniki/`, liczone w zapytaniach).
+   b) `HttpClient` robi 3 próby przy blokadzie. Przejrzeć: przy 403, 429 lub captcha koniec runu z czytelnym komunikatem, bez zmiany sesji proxy i bez obchodzenia. Ponowienie dopuszczalne tylko przy błędach sieci lub 5xx.
+   c) (już zapisane w §19) outliers w `scoredListing`.
+4. **Lista dzielnic urywa się na 32 pozycjach** (`searchLinksRelatedLocations`; Gdańsk, Bydgoszcz, Rzeszów, Kielce, Radom, Tychy). Przy `samplingMode = perDistrict` dzielnice spoza listy mogą nie trafić do próby. Do zbadania: dla miast z ≤ ok. 6 000 ofert sprzedaży pobierać cały rynek miasta (wszystkie strony), jak w Imovirtual; sprawdzić wpływ na Gdańsk.
+5. **Strona z danymi datanest.dev** przy grudniowej aktualizacji: 7+ miast = nowy tytuł; sekcja porównania PL–PT na trzech stronach do odświeżenia.
