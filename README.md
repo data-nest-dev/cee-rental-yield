@@ -151,7 +151,7 @@ A `scoredListing` record (example values):
 
 - `needsRenovation` – the listing says the flat needs renovation. It stays in the results and in the medians, so a cheap price may reflect the condition.
 - `suspectRooms` – less than 8 m² per room (for example 7 rooms in 27 m²), so the room count looks wrong. The listing is compared at city level only, not within a room group; `rooms` in the record is unchanged.
-- `outlier` – priced more than 40% below its group's median. Often a data quirk or a special case; check the listing before trusting the score.
+- Listings priced more than 40% below their group's median are an `outlier`: they are far more likely a data problem than a deal, so they are not returned, not scored in the output and not charged. They are counted in `scoredExcludedOutliers` in `RUN_SUMMARY`.
 
 Identical listings for sale (same district, rooms, area and price, for example identical units of one development) are merged into one record, the one with the lowest listing ID. The other IDs are in `identicalListingIds`; the group counts once in the medians, the deal score and the charges (`identicalMerged` in `RUN_SUMMARY`).
 
@@ -169,9 +169,9 @@ Listings that are a share of a flat (`share`) or a court auction (`auction`) are
 
 - **The admin-fee trap is handled.** On Otodom, `rentPrice` in a sale listing is the building fee, not a rent; it is never used as rent. Listings with swapped rent and fee fields are rejected.
 - **Sample sizes are shown.** Every group carries its listing counts and a confidence level; thin groups fall back to the city level instead of producing noisy numbers.
-- **Cleaning is explicit.** Ads, duplicates, hidden prices and implausible sizes are removed and counted in `RUN_SUMMARY`. The cheapest 1% and the most expensive 1% of each city's listings by price per m² are dropped before scoring (counted as `outlier` in `RUN_SUMMARY`), so the very cheapest listings are never scored. The `outlier` flag on a scored listing is separate: it only marks listings more than 40% below their group's median and removes nothing.
+- **Cleaning is explicit.** Ads, duplicates, hidden prices and implausible sizes are removed and counted in `RUN_SUMMARY`. The cheapest 1% and the most expensive 1% of each city's listings by price per m² are dropped before scoring (counted as `outlier` in `RUN_SUMMARY`), so the very cheapest listings are never scored. Separately, listings priced more than 40% below their group's median are left out of the scored listings and are not charged; their number is `scoredExcludedOutliers` in `RUN_SUMMARY`.
 - **No personal data.** Names, phone numbers, agency names, photos, descriptions and addresses are dropped when a listing is read; results contain our numbers and a link.
-- **Loud failures.** A blocked or empty run fails with a clear message. None of the Actor's result events are charged; Apify charges only its standard start fee of $0.00005.
+- **Loud failures.** If the portal answers a request with HTTP 403, HTTP 429 or a captcha, the Actor does not retry and does not work around it: the run stops fetching with a clear message (`blockedMessage` in `RUN_SUMMARY`). Cities that were completed before the block are delivered and charged; the city being fetched and the remaining ones are marked `skipped`, with no partial numbers. If nothing was completed, the run fails and none of the Actor's result events are charged (network errors and server errors are retried up to three times). An empty run also fails with a clear message; Apify charges only its standard start fee of $0.00005.
 
 ## Monitoring
 
@@ -227,7 +227,7 @@ These are upper bounds: free groups are not charged. Prices fall on higher Apify
 
 **Why do the yields differ from the portal's averages?** We use medians per m² within comparable groups, not city-wide means, and only cleaned listings.
 
-**What does `confidence` mean?** `high`: compared within the district with at least 40 sale listings. `medium`: district with fewer listings, or city × room count. `low`: whole-city comparison.
+**What does `confidence` mean?** `high`: compared within the district with at least 40 sale listings; a city × room count or whole-city comparison is also `high` when at least 80% of the city's listings were fetched and both sides have enough listings (100 sales and 30 rents, or 200 and 50 for the whole city). `medium`: district with fewer listings, or city × room count. `low`: whole-city comparison.
 
 **Why does a listing score 100?** Its price per m² is far below its group's median. Check the listing: very low prices often mean a renovation case, a share of a flat, or a data error.
 

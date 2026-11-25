@@ -62,7 +62,7 @@ async def test_portal_block_stops_the_run_and_skips_remaining_cities() -> None:
     source = Blocking()
     actor, _, summary = await _run({"cities": ["warszawa", "krakow", "wroclaw"], "mode": "scoreListings"}, source=source)
     assert {c for c, *_ in source.calls} == {"warszawa", "krakow"}  # wroclaw never requested
-    assert summary["cities"]["krakow"]["status"] == "failed" and "HTTP 403" in summary["cities"]["krakow"]["reason"]
+    assert summary["cities"]["krakow"]["status"] == "skipped" and "HTTP 403" in summary["cities"]["krakow"]["reason"]
     assert summary["cities"]["wroclaw"]["status"] == "skipped"
     assert "HTTP 403" in summary["blockedMessage"]
     assert actor.records("scoredListing")  # warszawa finished before the block and is delivered
@@ -134,3 +134,25 @@ def test_confidence_flows_through_resolve_and_groups() -> None:
 def test_sample_share_is_the_smaller_side_and_unknown_when_a_total_is_missing() -> None:
     assert sample_share({"sale": SideCoverage(80, 100), "rent": SideCoverage(90, 100)}) == 0.8
     assert sample_share({"sale": SideCoverage(80, 100), "rent": SideCoverage(90, None)}) is None
+
+
+@pytest.mark.asyncio
+async def test_block_midway_through_a_city_leaves_no_partial_numbers_or_events() -> None:
+    class RentBlocked(FakeSource):
+        async def fetch_listings(self, city_key, transaction, max_listings, max_per_district=None):
+            if city_key == "krakow" and transaction == "rent":
+                raise PortalBlockedError("www.otodom.pl refused the request (HTTP 403; krakow rent).")
+            return await super().fetch_listings(city_key, transaction, max_listings, max_per_district)
+
+    actor, _, summary = await _run({"cities": ["warszawa", "krakow"], "mode": "both"}, source=RentBlocked())
+    assert summary["cities"]["krakow"]["status"] == "skipped" and summary["cities"]["krakow"]["sides"] == {}
+    assert {r["city"] for r in actor.records("scoredListing") + actor.records("areaYield")} == {"Warszawa"}
+    assert summary["status"] == "partial" and summary["blockedMessage"]
+
+
+def test_readme_rules() -> None:
+    import re
+    text = (Path(__file__).parent.parent / "README.md").read_text()
+    domains = set(re.findall(r"https?://([^/\s)\"]+)", text))
+    assert all(d == "apify.com" or d.endswith(".apify.com") for d in domains), domains
+    assert len(re.findall(r"(?i)scraper", text)) == 0

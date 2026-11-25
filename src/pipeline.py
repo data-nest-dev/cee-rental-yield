@@ -392,7 +392,7 @@ async def _run(
             # 403, 429 or captcha ends the run: no further requests; cities already fetched are still delivered.
             blocked_message = str(e)
             summary["blockedMessage"] = blocked_message
-            summary["cities"][city_key] = {"status": "failed", "reason": blocked_message, "sides": {}}
+            summary["cities"][city_key] = {"status": "skipped", "reason": blocked_message, "sides": {}}
             continue
         city_summary = {"status": city.status, "reason": city.reason, "sides": city.sides}
         summary["cities"][city_key] = city_summary
