@@ -680,3 +680,6 @@ Otwarte:
 2. Blokady i czas zapytania na platformie Apify z datacenter (5 IP z USA), potem ewentualnie residential PL (M3) — wpływa na „domyślne uruchomienie < 8 min”. Test H w toku.
 3. Pytania z briefu M3 (sekcja „Ryzyka i otwarte pytania”).
 4. Fakt (2026-11-20): dwa runy monitoringu pobrały identyczne bajty; przyczyna niezweryfikowana. Teksty dla użytkowników nie twierdzą nic o cache'u Otodomu.
+
+        - 2026-11-25: opublikowany Actor `data-nest/imovirtual-rental-yield` (osobne repo `imovirtual-rental-yield`). README Otodom linkuje do niego w Roadmapie (tylko URL apify.com).
+        - Przypomnienie: outliers w `scoredListing` – poprawić przy grudniowym buildzie (jak w imovirtual: nie zwracać, nie naliczać; licznik osobno w `RUN_SUMMARY`).

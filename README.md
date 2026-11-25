@@ -237,7 +237,7 @@ These are upper bounds: free groups are not charged. Prices fall on higher Apify
 
 * ~~More Polish cities (Gdańsk, Poznań, Łódź)~~ – done.
 * More Polish cities (Katowice, Szczecin, Bydgoszcz, Lublin, Białystok) – next.
-* Portugal (Imovirtual) – next in line, once the Polish market is covered.
+* **Portugal – available now:** gross rental yield by freguesia and deal scores for Lisbon and Porto: https://apify.com/data-nest/imovirtual-rental-yield
 * Missing a city or a metric? Open an issue on the Issues tab – requests decide what comes next.
 
 ## Data sources and responsible use
