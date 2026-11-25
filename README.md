@@ -135,7 +135,7 @@ A `scoredListing` record (example values):
 ```json
 {
   "recordType": "scoredListing",
-  "source": "otodom", "url": "https://www.otodom.pl/pl/oferta/...",
+  "source": "otodom", "url": "…/pl/oferta/…",
   "country": "PL", "city": "Kraków", "district": "Podgórze", "rooms": 2, "areaM2": 48,
   "isPrimaryMarket": null,
   "price": {"local": 610000, "currency": "PLN", "eur": 138520},
