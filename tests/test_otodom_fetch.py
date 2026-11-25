@@ -66,7 +66,7 @@ class FakeHttp:
     def start_window(self, domain: str, label: str) -> None:
         self.windows.append((domain, label))
 
-    async def get(self, url: str, headers: dict | None = None) -> tuple[int, str]:
+    async def get(self, url: str, headers: dict | None = None, **kwargs) -> tuple[int, str]:
         self.calls.append(url)
         for key, responses in self.routes.items():
             if key in url:

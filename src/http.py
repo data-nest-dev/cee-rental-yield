@@ -13,8 +13,6 @@ logger = logging.getLogger(__name__)
 
 MAX_RETRIES = 3
 BASE_DELAY = 1.0
-BLOCK_RATE_LIMIT = 0.2
-BLOCK_MIN_REQUESTS = 10
 # Datacenter group BUYPROXIES94952 on the owner's account has 5 IPs; one session id per IP.
 PROXY_SESSIONS = 5
 
@@ -103,17 +101,35 @@ class HttpClient:
         url: str,
         headers: dict | None = None,
         params: dict | None = None,
+        follow_redirect_prefix: str | tuple[str, ...] | None = None,
     ) -> tuple[int, str]:
+        """GET through the per-domain limiter. HTTP redirects are never followed by the client itself.
+
+        With `follow_redirect_prefix` (a path prefix such as "/pl/wyniki/", or a tuple of them) one redirect hop
+        is followed by hand: it goes through the limiter like any request, is counted in the request counters,
+        and must stay on the same domain under that prefix; anything else raises RedirectError. Without it a
+        redirect status is returned as is.
+        """
+        status, body, location = await self._request(url, headers, params)
+        if status not in REDIRECT_STATUSES or follow_redirect_prefix is None:
+            return status, body
+        target = _redirect_target(url, location, follow_redirect_prefix)
+        status, body, location = await self._request(target, headers, params)
+        if status in REDIRECT_STATUSES:
+            raise RedirectError("Server redirected more than once; refusing to follow further.")
+        return status, body
+
+    async def _request(
+        self,
+        url: str,
+        headers: dict | None = None,
+        params: dict | None = None,
+    ) -> tuple[int, str, str | None]:
+        """One request through the limiter. Retries only network errors and 5xx; 403, 429 and captcha end the run."""
         domain = self._get_domain(url)
         lock = self._get_lock(domain)
         stats = self._get_stats(domain)
-
         window = self._windows.setdefault(domain, BlockWindow("default"))
-        if window.requests > BLOCK_MIN_REQUESTS and window.blocked / window.requests > BLOCK_RATE_LIMIT:
-            raise BlockedError(
-                f"{domain} blocked {window.blocked} of {window.requests} requests "
-                f"({window.label}); check your proxy settings"
-            )
 
         async with lock:
             # Rate limit: 1 req/s per domain
@@ -136,7 +152,7 @@ class HttpClient:
                         "headers": headers or {},
                         "params": params,
                         "timeout": 30,
-                        "allow_redirects": True,
+                        "allow_redirects": False,
                     }
                     proxy = await self._proxy_for(session_id)
                     if proxy:
@@ -148,31 +164,30 @@ class HttpClient:
                     body = resp.text
                     stats.bytes_downloaded += len(body.encode())
 
-                    if resp.status_code == 403 or _is_captcha(body):
+                    captcha = _is_captcha(body)
+                    if resp.status_code in (403, 429) or captcha:
                         stats.blocked += 1
                         window.count(session_id, blocked=True)
-                        logger.warning(
-                            "Blocked by %s (attempt %d/%d, session %s)",
-                            domain, attempt + 1, MAX_RETRIES, session_id,
+                        logger.warning("Blocked by %s (HTTP %d, session %s); stopping the run",
+                                       domain, resp.status_code, session_id)
+                        raise PortalBlockedError(
+                            f"{domain} refused the request (HTTP {resp.status_code}"
+                            f"{', captcha' if captcha else ''}; {window.label}). "
+                            "The Actor does not retry or work around blocks, so the run stopped. "
+                            "Try again later or use a different proxy configuration."
                         )
-                        if self.proxy_url_for is not None:
-                            self._rotate_session(domain)
-                        if attempt < MAX_RETRIES - 1:
-                            await asyncio.sleep(_backoff(attempt))
-                            continue
-                        return resp.status_code, body
 
                     window.count(session_id, blocked=False)
 
-                    if resp.status_code in (429, 500, 502, 503, 504):
+                    if resp.status_code in (500, 502, 503, 504):
                         stats.errors += 1
                         if attempt < MAX_RETRIES - 1:
                             await asyncio.sleep(_backoff(attempt))
                             continue
 
-                    return resp.status_code, body
+                    return resp.status_code, body, resp.headers.get("location")
 
-                except ProxyAccessError:
+                except BlockedError:
                     raise
                 except Exception as e:
                     if proxy and _is_proxy_refusal(None, e):
@@ -186,7 +201,7 @@ class HttpClient:
 
             if last_exc:
                 raise last_exc
-            return 500, ""
+            return 500, "", None
 
     async def close(self) -> None:
         if self._session:
@@ -196,6 +211,28 @@ class HttpClient:
 
 class BlockedError(Exception):
     pass
+
+
+class PortalBlockedError(BlockedError):
+    """The portal answered 403, 429 or a captcha. Ends the run: no retry, no new session, no workaround."""
+
+
+REDIRECT_STATUSES = (301, 302, 303, 307, 308)
+
+
+class RedirectError(Exception):
+    """A redirect the client refuses to follow (other domain, other path, or more than one hop)."""
+
+
+def _redirect_target(url: str, location: str | None, prefix: str | tuple[str, ...]) -> str:
+    from urllib.parse import urljoin, urlsplit
+    if not location:
+        raise RedirectError("Server redirected without a Location header.")
+    target = urljoin(url, location)
+    old, new = urlsplit(url), urlsplit(target)
+    if new.scheme != old.scheme or new.netloc != old.netloc or not new.path.startswith(prefix) or ".." in new.path:
+        raise RedirectError(f"Server redirected outside {old.netloc}; refusing to follow.")
+    return target
 
 
 class ProxyAccessError(BlockedError):

@@ -71,6 +71,46 @@ CITIES: dict[str, CityConfig] = {
         source="otodom",
         location_path="wielkopolskie/poznan/poznan/poznan",
     ),
+    "szczecin": CityConfig(
+        key="szczecin",
+        display_name="Szczecin",
+        country="PL",
+        currency="PLN",
+        source="otodom",
+        location_path="zachodniopomorskie/szczecin/szczecin/szczecin",
+    ),
+    "gdynia": CityConfig(
+        key="gdynia",
+        display_name="Gdynia",
+        country="PL",
+        currency="PLN",
+        source="otodom",
+        location_path="pomorskie/gdynia/gdynia/gdynia",
+    ),
+    "rzeszow": CityConfig(
+        key="rzeszow",
+        display_name="Rzeszów",
+        country="PL",
+        currency="PLN",
+        source="otodom",
+        location_path="podkarpackie/rzeszow/rzeszow/rzeszow",
+    ),
+    "lublin": CityConfig(
+        key="lublin",
+        display_name="Lublin",
+        country="PL",
+        currency="PLN",
+        source="otodom",
+        location_path="lubelskie/lublin/lublin/lublin",
+    ),
+    "bydgoszcz": CityConfig(
+        key="bydgoszcz",
+        display_name="Bydgoszcz",
+        country="PL",
+        currency="PLN",
+        source="otodom",
+        location_path="kujawsko--pomorskie/bydgoszcz/bydgoszcz/bydgoszcz",
+    ),
 }
 
 OTODOM_TRANSACTION_MAP = {"sale": "sprzedaz", "rent": "wynajem"}

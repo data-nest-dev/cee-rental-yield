@@ -268,7 +268,7 @@ async def test_monitoring_reports_only_the_price_cut() -> None:
     actor = FakeActor()
     await _run(MONITOR, actor=actor)
     first = actor.records("scoredListing")
-    target_url = first[0]["url"]
+    target_url = first[-1]["url"]  # lowest discount: a 5% cut cannot turn it into an excluded outlier
     slug = target_url.rsplit("/", 1)[-1]
 
     def cut(items, tx):

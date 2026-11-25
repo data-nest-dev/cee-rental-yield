@@ -14,7 +14,7 @@ from src.charging import AREA_YIELD_EVENT, CHARGED_CONFIDENCE, SCORED_LISTING_EV
 from src.clean import clean_listings
 from src.config import CITIES
 from src.fx import parse_ecb_rates
-from src.http import BlockedError, HttpClient, ProxyAccessError
+from src.http import BlockedError, HttpClient, PortalBlockedError, ProxyAccessError
 from src.inputs import ROOM_BUCKETS, InputError, RunInput, is_prefill_run, parse_input
 from src.models import Listing
 from src.monitor import compute_changes, update_state
@@ -22,7 +22,7 @@ from src.output import build_area_yield, build_scored_listing, build_side_summar
 from src.sources.otodom import DOMAIN, OtodomSource, parse_otodom_items
 from src.stats import (
     SideCoverage, area_sample, compute_groups, district_group_coverage, gate_coverage,
-    index_groups, resolve_comparables, listing_rooms_bucket, sample_stats,
+    index_groups, resolve_comparables, listing_rooms_bucket, sample_share, sample_stats,
 )
 
 logger = logging.getLogger(__name__)
@@ -64,6 +64,7 @@ class CityOutput:
     area_records: list[dict]
     report_groups: list[dict]
     scored: list[tuple[Listing, dict]]
+    scored_excluded_outliers: int
     gate: dict | None
     groups_info: dict | None
 
@@ -86,7 +87,7 @@ async def fetch_city(http: HttpClient, source: OtodomSource, city_key: str, run_
             raw, stats = await source.fetch_listings(
                 city_key, tx, run_input.max_listings_per_side, max_per_district=run_input.max_per_district_arg(),
             )
-        except ProxyAccessError:
+        except (ProxyAccessError, PortalBlockedError):
             raise
         except BlockedError as e:
             return _failed(result, f"{tx}: blocked ({e})")
@@ -149,13 +150,15 @@ def compute_city(city: CityResult, run_input: RunInput, rates: dict[str, float],
     # Groups are computed in every mode: free city context and YIELD_REPORT need them in scoreListings too.
     area_records: list[dict] = []
     report_groups: list[dict] = []
-    for g in compute_groups(listings, run_input.min_sale_sample, run_input.min_rent_sample):
+    share = sample_share(city.coverage)
+    for g in compute_groups(listings, run_input.min_sale_sample, run_input.min_rent_sample, share):
         rec = build_area_yield(g, rates, fx_date, SOURCE_NAMES, sample=area_sample(g, as_of, city.coverage))
         report_groups.append(rec)
         if g.rooms_bucket == "all" or g.rooms_bucket in run_input.rooms:
             area_records.append(rec)
 
     scored: list[tuple[Listing, dict]] = []
+    excluded_outliers = 0
     if run_input.wants_scores:
         index = index_groups(listings)
         for ls in listings:
@@ -164,10 +167,15 @@ def compute_city(city: CityResult, run_input: RunInput, rates: dict[str, float],
             rb = listing_rooms_bucket(ls)
             if not all_rooms and rb not in run_input.rooms:
                 continue
-            comp = resolve_comparables(ls, index, run_input.min_sale_sample, run_input.min_rent_sample)
+            comp = resolve_comparables(ls, index, run_input.min_sale_sample, run_input.min_rent_sample, share)
             if comp is None:
                 continue
             rec = build_scored_listing(ls, comp, rates)
+            if "outlier" in rec["flags"]:
+                # An asking price far below its group median is more likely a data problem than a deal: such
+                # listings are not returned and not charged; they are counted separately.
+                excluded_outliers += 1
+                continue
             if rec["dealScore"] >= run_input.min_score:
                 scored.append((ls, rec))
 
@@ -175,6 +183,7 @@ def compute_city(city: CityResult, run_input: RunInput, rates: dict[str, float],
         area_records=area_records,
         report_groups=report_groups,
         scored=scored,
+        scored_excluded_outliers=excluded_outliers,
         gate=gate_coverage(listings, run_input.min_sale_sample, run_input.min_rent_sample).get(city.name),
         groups_info=district_group_coverage(listings, run_input.min_sale_sample, run_input.min_rent_sample).get(city.name),
     )
@@ -369,19 +378,31 @@ async def _run(
     source = source_factory(http)
     source.market = run_input.market
     outputs: dict[str, CityOutput] = {}
+    blocked_message: str | None = None
     for city_key in run_input.cities:
         await actor.status(f"Fetching {CITIES[city_key].display_name}...")
+        if blocked_message:
+            summary["cities"][city_key] = {"status": "skipped", "reason": "run stopped after the portal blocked a request", "sides": {}}
+            continue
         try:
             city = await fetch_city(http, source, city_key, run_input, as_of)
         except ProxyAccessError as e:
             return await _fail_proxy(actor, summary, started, e)
+        except PortalBlockedError as e:
+            # 403, 429 or captcha ends the run: no further requests; cities already fetched are still delivered.
+            blocked_message = str(e)
+            summary["blockedMessage"] = blocked_message
+            summary["cities"][city_key] = {"status": "failed", "reason": blocked_message, "sides": {}}
+            continue
         city_summary = {"status": city.status, "reason": city.reason, "sides": city.sides}
         summary["cities"][city_key] = city_summary
         if city.status != "ok":
             continue
         out = compute_city(city, run_input, rates, fx_date, as_of)
         outputs[city_key] = out
-        city_summary.update(gate=out.gate, groupsInfo=out.groups_info)
+        city_summary.update(gate=out.gate, groupsInfo=out.groups_info, scoredExcludedOutliers=out.scored_excluded_outliers)
+
+    summary["scoredExcludedOutliers"] = sum(out.scored_excluded_outliers for out in outputs.values())
 
     # Groups are always computed; which of them reach the dataset depends on mode (and budget mode).
     all_groups = [rec for out in outputs.values() for rec in out.area_records]
@@ -434,7 +455,7 @@ async def _run(
     summary["scoredAvailable"] = scored_available
 
     if not free_area and not charged_area and not scored:
-        reasons = "; ".join(f"{k}: {v['reason'] or 'no results'}" for k, v in summary["cities"].items())
+        reasons = blocked_message or "; ".join(f"{k}: {v['reason'] or 'no results'}" for k, v in summary["cities"].items())
         summary.update(status="failed", reason=f"No results ({reasons})")
         await save_summary(actor, summary, started)
         await actor.fail(f"No results were produced; no result events were charged. {reasons}")

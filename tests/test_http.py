@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pytest
 
 import src.http as http_mod
-from src.http import BlockedError, HttpClient
+from src.http import HttpClient, PortalBlockedError, RedirectError
 
 DOMAIN = "www.otodom.pl"
 URL = f"https://{DOMAIN}/x"
@@ -15,14 +15,18 @@ URL = f"https://{DOMAIN}/x"
 class _Resp:
     status_code: int
     text: str = "{}"
+    headers: dict = field(default_factory=dict)
 
 
 class FakeSession:
-    def __init__(self, statuses: list[int]) -> None:
+    def __init__(self, statuses: list) -> None:
         self.statuses = statuses
+        self.urls: list[str] = []
 
     async def get(self, url: str, **kwargs) -> _Resp:
-        return _Resp(self.statuses.pop(0) if self.statuses else 200)
+        self.urls.append(url)
+        item = self.statuses.pop(0) if self.statuses else 200
+        return item if isinstance(item, _Resp) else _Resp(item)
 
     async def close(self) -> None:
         pass
@@ -33,45 +37,128 @@ def _no_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(http_mod, "_backoff", lambda attempt: 0)
 
 
-def _client(statuses: list[int]) -> HttpClient:
+def _client(statuses: list) -> HttpClient:
     client = HttpClient(min_interval=0)
     client._session = FakeSession(statuses)
     return client
 
 
 @pytest.mark.asyncio
-async def test_aborts_when_window_block_rate_exceeds_20_percent() -> None:
-    # 8 OK, then one URL blocked on all 3 attempts -> 3 of 11 requests blocked (27%)
-    client = _client([200] * 8 + [403, 403, 403])
+@pytest.mark.parametrize("status", [403, 429])
+async def test_block_status_ends_the_run_without_retry(status: int) -> None:
+    client = _client([status, 200])
     client.start_window(DOMAIN, "katowice sale")
-    for _ in range(9):
+    with pytest.raises(PortalBlockedError, match=rf"HTTP {status}; katowice sale"):
         await client.get(URL)
-    with pytest.raises(BlockedError, match=r"blocked 3 of 11 requests \(katowice sale\)"):
-        await client.get(URL)
+    assert len(client._session.urls) == 1
+    assert client.domain_stats[DOMAIN].blocked == 1 and client.domain_stats[DOMAIN].requests == 1
 
 
 @pytest.mark.asyncio
-async def test_new_window_resets_block_rate() -> None:
-    client = _client([200] * 8 + [403, 403, 403])
-    client.start_window(DOMAIN, "katowice sale")
-    for _ in range(9):
+async def test_captcha_page_ends_the_run_without_retry() -> None:
+    client = _client([_Resp(200, "<html>Please solve the CAPTCHA</html>"), 200])
+    with pytest.raises(PortalBlockedError, match="captcha"):
         await client.get(URL)
-    client.start_window(DOMAIN, "katowice rent")
-    status, _ = await client.get(URL)
-    assert status == 200
-    # domain totals still accumulate for reporting
-    assert client.domain_stats[DOMAIN].blocked == 3
-    assert client.domain_stats[DOMAIN].requests == 12
+    assert len(client._session.urls) == 1
 
 
 @pytest.mark.asyncio
-async def test_below_minimum_requests_does_not_abort() -> None:
-    client = _client([403] * 9 + [200])
+async def test_block_does_not_rotate_the_proxy_session() -> None:
+    client, fake = _proxied_client([403, 200])
     client.start_window(DOMAIN, "w")
-    for _ in range(3):
-        await client.get(URL)  # 9 blocked attempts of 9 requests
+    with pytest.raises(PortalBlockedError):
+        await client.get(URL)
+    assert fake.proxies == ["http://s0.proxy"]
+    assert client._session_id(DOMAIN) == "s0"
+
+
+@pytest.mark.asyncio
+async def test_server_errors_are_retried_up_to_three_attempts() -> None:
+    client = _client([503, 502, 200])
     status, _ = await client.get(URL)
-    assert status == 200
+    assert status == 200 and len(client._session.urls) == 3
+    client = _client([500, 500, 500, 200])
+    status, _ = await client.get(URL)
+    assert status == 500 and len(client._session.urls) == 3
+
+
+@pytest.mark.asyncio
+async def test_network_errors_are_retried() -> None:
+    client = _client([])
+    calls = {"n": 0}
+
+    async def flaky(url: str, **kwargs):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise OSError("reset")
+        return _Resp(200)
+    client._session.get = flaky  # type: ignore[method-assign]
+    status, _ = await client.get(URL)
+    assert status == 200 and calls["n"] == 3
+
+
+@pytest.mark.asyncio
+async def test_client_never_lets_the_session_follow_redirects() -> None:
+    seen: dict = {}
+    client = _client([])
+
+    async def spy(url: str, **kwargs):
+        seen.update(kwargs)
+        return _Resp(200)
+    client._session.get = spy  # type: ignore[method-assign]
+    await client.get(URL)
+    assert seen["allow_redirects"] is False
+
+
+@pytest.mark.asyncio
+async def test_redirect_is_returned_as_is_without_a_follow_prefix() -> None:
+    client = _client([_Resp(301, "", {"location": "/pl/wyniki/y"})])
+    status, _ = await client.get(URL)
+    assert status == 301 and len(client._session.urls) == 1
+
+
+@pytest.mark.asyncio
+async def test_redirect_hop_goes_through_the_limiter_and_is_counted() -> None:
+    client = _client([_Resp(301, "", {"location": "/pl/wyniki/y"}), _Resp(200, "ok")])
+    status, body = await client.get(URL, follow_redirect_prefix="/pl/wyniki/")
+    assert (status, body) == (200, "ok")
+    assert client._session.urls == [URL, f"https://{DOMAIN}/pl/wyniki/y"]
+    assert client.domain_stats[DOMAIN].requests == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("location", [
+    "https://evil.example/pl/wyniki/y",
+    "/pl/oferta/z",
+    "/pl/wyniki/../oferta/z",
+    None,
+])
+async def test_redirect_outside_the_prefix_or_domain_is_refused(location: str | None) -> None:
+    headers = {"location": location} if location else {}
+    client = _client([_Resp(302, "", headers), 200])
+    with pytest.raises(RedirectError):
+        await client.get(URL, follow_redirect_prefix="/pl/wyniki/")
+    assert len(client._session.urls) == 1
+
+
+@pytest.mark.asyncio
+async def test_second_redirect_is_refused() -> None:
+    client = _client([_Resp(301, "", {"location": "/pl/wyniki/y"}), _Resp(301, "", {"location": "/pl/wyniki/z"})])
+    with pytest.raises(RedirectError, match="more than once"):
+        await client.get(URL, follow_redirect_prefix="/pl/wyniki/")
+    assert len(client._session.urls) == 2
+
+
+@pytest.mark.asyncio
+async def test_new_window_keeps_domain_totals() -> None:
+    client = _client([200] * 3)
+    client.start_window(DOMAIN, "katowice sale")
+    await client.get(URL)
+    await client.get(URL)
+    client.start_window(DOMAIN, "katowice rent")
+    await client.get(URL)
+    assert client.window(DOMAIN).requests == 1
+    assert client.domain_stats[DOMAIN].requests == 3
 
 
 class RecordingSession(FakeSession):
@@ -100,18 +187,6 @@ async def test_each_window_starts_on_the_next_session_round_robin() -> None:
         client.start_window(DOMAIN, label)
         await client.get(URL)
     assert fake.proxies == ["http://s0.proxy", "http://s1.proxy", "http://s2.proxy", "http://s0.proxy"]
-
-
-@pytest.mark.asyncio
-async def test_block_rotates_to_next_session_before_retry_and_counts_per_session() -> None:
-    client, fake = _proxied_client([403, 200])
-    client.start_window(DOMAIN, "katowice sale")
-    status, _ = await client.get(URL)
-    assert status == 200
-    assert fake.proxies == ["http://s0.proxy", "http://s1.proxy"]
-    w = client.window(DOMAIN)
-    assert (w.requests, w.blocked) == (2, 1)
-    assert w.sessions == {"s0": {"requests": 1, "blocked": 1}, "s1": {"requests": 1, "blocked": 0}}
 
 
 @pytest.mark.asyncio

@@ -40,6 +40,8 @@ FLOOR_MAP = {
 
 DOMAIN = "www.otodom.pl"
 BASE_URL = f"https://{DOMAIN}"
+# HTTP redirects are followed by hand, once, and only within these paths (CLAUDE.md section 20.3a)
+REDIRECT_PREFIXES = ("/pl/wyniki/", "/_next/data/")
 # LATEST orders by first publication: stable pagination, unlike DEFAULT (ordered by paid bumps).
 SORT_BY = "LATEST"
 SORT_DIRECTION = "DESC"
@@ -226,7 +228,7 @@ class OtodomSource:
             + "&".join(self._order_params())
         )
         headers = {"User-Agent": USER_AGENT}
-        status, body = await self._http.get(url, headers=headers)
+        status, body = await self._http.get(url, headers=headers, follow_redirect_prefix=REDIRECT_PREFIXES)
 
         if status != 200:
             raise RuntimeError(f"Otodom first page returned {status}")
@@ -297,7 +299,7 @@ class OtodomSource:
             "x-nextjs-data": "1",
             "Referer": f"{BASE_URL}/pl/wyniki/{tx}/mieszkanie/{location_path}",
         }
-        status, body = await self._http.get(self._data_url(location_path, tx, page), headers=headers)
+        status, body = await self._http.get(self._data_url(location_path, tx, page), headers=headers, follow_redirect_prefix=REDIRECT_PREFIXES)
 
         if status == 404:
             stats["build_id_refreshes"] += 1
@@ -305,7 +307,7 @@ class OtodomSource:
             if not new_build_id or new_build_id == self._build_id:
                 return None
             self._build_id = new_build_id
-            status, body = await self._http.get(self._data_url(location_path, tx, page), headers=headers)
+            status, body = await self._http.get(self._data_url(location_path, tx, page), headers=headers, follow_redirect_prefix=REDIRECT_PREFIXES)
 
         if status != 200:
             return None
@@ -326,7 +328,7 @@ class OtodomSource:
             if redirected is None:
                 return None
             logger.info("Otodom data route redirected (page %d): following once to %s", page, redirected.split("?")[0])
-            status, body = await self._http.get(redirected, headers=headers)
+            status, body = await self._http.get(redirected, headers=headers, follow_redirect_prefix=REDIRECT_PREFIXES)
             if status != 200:
                 return None
             try:
@@ -361,7 +363,7 @@ class OtodomSource:
             + "&".join(self._order_params())
         )
         headers = {"User-Agent": USER_AGENT}
-        status, body = await self._http.get(url, headers=headers)
+        status, body = await self._http.get(url, headers=headers, follow_redirect_prefix=REDIRECT_PREFIXES)
         if status != 200:
             logger.warning("Otodom HTML page %d returned %d", page, status)
             return [], {}, None
@@ -375,7 +377,7 @@ class OtodomSource:
     async def _refresh_build_id(self, location_path: str, tx: str) -> str | None:
         url = f"{BASE_URL}/pl/wyniki/{tx}/mieszkanie/{location_path}"
         headers = {"User-Agent": USER_AGENT}
-        status, body = await self._http.get(url, headers=headers)
+        status, body = await self._http.get(url, headers=headers, follow_redirect_prefix=REDIRECT_PREFIXES)
         if status != 200:
             return None
         try:

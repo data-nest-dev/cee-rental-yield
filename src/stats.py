@@ -62,11 +62,26 @@ def index_groups(listings: list[Listing]) -> GroupIndex:
     return index
 
 
-def _confidence(level: str | None, sale_count: int) -> str:
+# Full-sample rule (CLAUDE.md section 20.1d, as in the Imovirtual Actor): city-level rows rest on a near-complete
+# sample of the city's supply only when the fetched share is high, so they earn `high` just then and only with
+# enough listings on both sides. Before: city_rooms was always `medium` and city always `low`.
+FULL_SAMPLE_SHARE = 0.8
+CITY_ROOMS_HIGH_MIN_SALE = 100
+CITY_ROOMS_HIGH_MIN_RENT = 30
+CITY_HIGH_MIN_SALE = 200
+CITY_HIGH_MIN_RENT = 50
+
+
+def _confidence(level: str | None, sale_count: int, rent_count: int = 0, sample_share: float | None = None) -> str:
+    """district: high from 40 sales, else medium. city_rooms / city: medium / low, unless the sample share is at
+    least FULL_SAMPLE_SHARE and both sides reach the count thresholds (then high)."""
+    full = sample_share is not None and sample_share >= FULL_SAMPLE_SHARE
     if level == "district":
         return "high" if sale_count >= 40 else "medium"
     if level == "city_rooms":
-        return "medium"
+        return "high" if full and sale_count >= CITY_ROOMS_HIGH_MIN_SALE and rent_count >= CITY_ROOMS_HIGH_MIN_RENT else "medium"
+    if level == "city":
+        return "high" if full and sale_count >= CITY_HIGH_MIN_SALE and rent_count >= CITY_HIGH_MIN_RENT else "low"
     return "low"
 
 
@@ -75,6 +90,7 @@ def resolve_comparables(
     index: GroupIndex,
     min_sale_sample: int = 15,
     min_rent_sample: int = 10,
+    sample_share: float | None = None,
 ) -> ListingComparables | None:
     """Sale and rent fall back independently; None if no level has enough sales to score against."""
     keys = group_keys(listing)
@@ -94,7 +110,7 @@ def resolve_comparables(
         sale_listings=sale_listings,
         rent_level=rent_level,
         rent_listings=rent_listings,
-        confidence=_confidence(worse_level, len(sale_listings)),
+        confidence=_confidence(worse_level, len(sale_listings), len(rent_listings), sample_share),
     )
 
 
@@ -102,6 +118,7 @@ def compute_groups(
     listings: list[Listing],
     min_sale_sample: int = 15,
     min_rent_sample: int = 10,
+    sample_share: float | None = None,
 ) -> list[GroupStats]:
     """areaYield groups: every group, at any level, where both thresholds hold at that level."""
     index = index_groups(listings)
@@ -117,7 +134,7 @@ def compute_groups(
             district=district,
             rooms_bucket=rooms or "all",
             group_level=level,
-            confidence=_confidence(level, len(sales)),
+            confidence=_confidence(level, len(sales), len(rents), sample_share),
             sale_listings=sales,
             rent_listings=rents,
             sale_price_per_m2=[ls.price_local / ls.area_m2 for ls in sales],
@@ -234,6 +251,12 @@ def area_sample(
         else:
             result[side] = sample_stats(listings, as_of, cov.fetched, cov.total)
     return result
+
+
+def sample_share(coverage: dict[str, SideCoverage]) -> float | None:
+    """Share of the city's listings that was fetched: the smaller of the sale and rent side; None when unknown."""
+    shares = [c.fetched / c.total for c in coverage.values() if c.total]
+    return min(shares) if len(shares) == len(coverage) and shares else None
 
 
 def median_val(data: list[float]) -> float:

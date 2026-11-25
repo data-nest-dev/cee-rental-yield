@@ -18,7 +18,12 @@
                     "katowice",
                     "lodz",
                     "gdansk",
-                    "poznan"
+                    "poznan",
+                    "szczecin",
+                    "gdynia",
+                    "rzeszow",
+                    "lublin",
+                    "bydgoszcz"
                 ],
                 "enumTitles": [
                     "Warsaw",
@@ -27,7 +32,12 @@
                     "Katowice",
                     "Łódź",
                     "Gdańsk",
-                    "Poznań"
+                    "Poznań",
+                    "Szczecin",
+                    "Gdynia",
+                    "Rzeszów",
+                    "Lublin",
+                    "Bydgoszcz"
                 ]
             },
             "minItems": 1,
