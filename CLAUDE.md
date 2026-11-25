@@ -103,6 +103,7 @@ Repo: `https://github.com/data-nest-dev/cee-rental-yield` · Właściciel: datan
         - Strony Tasków w Store: tabela z przykładowymi danymi („example dataset”) jest niedostępna (sekcja Dataset schema w Publishing ma tylko wybór datasetu i widoku). Decyzja: pomijamy. Taski `rental-yield-lodz` i `rental-yield-poznan-gdansk` mają dataset `yields` + widok „Rental yield by district” oraz FAQ (7 pytań, EN, dodane w Console). Taska Poznań+Gdańsk nie uruchamiamy (brak potrzeby).
         - Promocja: 2026-11-24 wysłano pitche z danymi 6 miast do Business Insider Polska, Dziennika Łódzkiego, Głosu Wielkopolskiego, Trojmiasto.pl i PropertyNews.pl. Follow-up: 2026-12-01 (te 5) i 2026-11-30 (Bankier, direct.money, Bezprawnik).
         - Monitoring publikacji naszych danych w mediach: cykliczne zadanie poza repo (pon i czw 9:17), szuka nazwy Datanest i par charakterystycznych liczb. Przy grudniowej aktualizacji danych podmienić liczby w jego poleceniu.
+        - 2026-11-25: quality score 83/100 (było 79); rekomendacja „Mark sensitive input fields as secret” zniknęła po buildzie 0.0.31 (zmiana `stateKey` → `watchlistName`).
 
 **Po stronie właściciela (nie Claude Code):**
 - zaakceptować brief M3 (albo odesłać poprawki),
