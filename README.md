@@ -1,6 +1,6 @@
 # Otodom Rental Yield & Deal Score – Poland
 
-This Actor calculates the price per m² by district and the gross rental yield by district and room count, and gives every flat for sale a deal score, using Otodom listings for Warsaw, Kraków, Wrocław, Łódź, Poznań and Gdańsk. Prices are in EUR and PLN. Use it for rental yield in Poland, price per m² by district and spotting flats priced below their neighbourhood, whether you are a buy-to-let investor or an analyst. One run samples apartments for sale and for long-term rent and returns:
+This Actor calculates the price per m² by district and the gross rental yield by district and room count, and gives every flat for sale a deal score, using Otodom listings for 12 cities: Warsaw, Kraków, Wrocław, Łódź, Poznań, Gdańsk, Katowice, Szczecin, Gdynia, Rzeszów, Lublin and Bydgoszcz. Prices are in EUR and PLN. Use it for rental yield in Poland, price per m² by district and spotting flats priced below their neighbourhood, whether you are a buy-to-let investor or an analyst. One run samples apartments for sale and for long-term rent and returns:
 
 - **Gross rental yield per district and room count**, with medians, quartiles and sample sizes.
 - **A 0–100 deal score for every listing for sale**, against the median price per m² of comparable flats.
@@ -42,7 +42,9 @@ The first run with the default example (prefill: Warsaw, the 360 newest listings
 
 ## Yields by city
 
-Gross rental yield from test runs in November 2026 (asking prices and advertised rents, medians):
+Gross rental yield from test runs in November 2026 (asking prices and advertised rents, medians). The two tables come from different runs and use different sampling, so compare them with care.
+
+**Warsaw, Kraków, Wrocław, Łódź, Poznań, Gdańsk** – runs on 19–23 Nov 2026, latest listings sampled per district:
 
 | City | Gross yield | Sale price, EUR/m² | Rent, EUR/month per m² |
 |---|---|---|---|
@@ -52,6 +54,17 @@ Gross rental yield from test runs in November 2026 (asking prices and advertised
 | Gdańsk | 5.51% | 3,257 | 15.0 |
 | Warsaw | 5.26% | 3,927 | 17.2 |
 | Kraków | 5.01% | 3,482 | 14.5 |
+
+**Katowice, Szczecin, Gdynia, Rzeszów, Lublin, Bydgoszcz** – runs on 25 Nov 2026 (ECB rate 4.48 PLN/EUR), full market: all result pages fetched:
+
+| City | Gross yield | Sale price, EUR/m² | Rent, EUR/month per m² |
+|---|---|---|---|
+| Szczecin | 7.02% | 2,303 | 13.5 |
+| Katowice | 6.31% | 2,261 | 11.9 |
+| Lublin | 6.28% | 2,299 | 12.0 |
+| Bydgoszcz | 6.03% | 2,299 | 11.6 |
+| Rzeszów | 5.89% | 2,308 | 11.3 |
+| Gdynia | 5.74% | 2,901 | 13.9 |
 
 The portal splits Wrocław, Łódź and Poznań into 5 large districts each and Gdańsk into 32 smaller ones (with the default minimum sample sizes about 12 of them are reported), so district-level results are not equally detailed across cities.
 
@@ -82,6 +95,12 @@ More inputs are under *Example inputs* below.
 
 ```json
 {"cities": ["krakow"], "mode": "scoreListings", "rooms": ["2"], "minScore": 80}
+```
+
+**Full market of a smaller city** – fetches every listing of the city instead of a per-district sample. Use it for cities with up to about 6,000 listings for sale (for example Katowice, Szczecin, Lublin, Bydgoszcz, Rzeszów, Gdynia); the run takes longer for larger cities.
+
+```json
+{"cities": ["katowice"], "mode": "yieldReport", "samplingMode": "city", "maxListingsPerSide": 7000}
 ```
 
 **Warsaw vs Wrocław: where buy-to-let pays more** – returns the yield records of both cities in the default dataset, so gross yields can be compared side by side.
@@ -215,6 +234,7 @@ These are upper bounds: free groups are not charged. Prices fall on higher Apify
 
 - **Asking prices, not transaction prices.** Gross yield, not net (no taxes, vacancy, maintenance).
 - **The sample is current supply.** Listings are sampled newest first, so long-unsold stock is under-represented. Every yield record reports the sample's median age, oldest listing and share of reachable listings (`reachableItems`).
+- **Flats inside developer projects are not in the medians.** When the portal shows a whole development as a single project tile, the flats inside it are not listed individually, so they are not fetched. The numbers describe individually listed flats. In the 25 Nov 2026 runs these units were between 22% (Bydgoszcz) and 69% (Katowice) of the portal's total for sales; `sample.*.primaryMarketUnits` and `reachableItems` show the figures for each run. New builds are often more expensive per m², so the yield of the whole market may be somewhat lower.
 - **Developer projects are counted, not scored.** Project tiles have no single price or area, and the few example units shown inside a tile are not representative; both are left out. Project counts appear in `RUN_SUMMARY`.
 - **New builds are not always recognised.** Developer listings that the portal does not link to a development are marked `isPrimaryMarket: null` (unknown), not `true`.
 - **Primary and secondary market are mixed by default.** With the default setting, price comparisons include both new builds from developers and resales, and `isPrimaryMarket` is `true` when the portal links the flat to a development and `null` (unknown) otherwise. Set `includePrimaryMarket` to `false` to request resales only; every record then has `isPrimaryMarket: false`.
@@ -236,7 +256,8 @@ These are upper bounds: free groups are not charged. Prices fall on higher Apify
 ## Roadmap
 
 * ~~More Polish cities (Gdańsk, Poznań, Łódź)~~ – done.
-* More Polish cities (Katowice, Szczecin, Bydgoszcz, Lublin, Białystok) – next.
+* ~~Katowice, Szczecin, Gdynia, Rzeszów, Lublin, Bydgoszcz~~ – available now.
+* Next: Bielsko-Biała, Gliwice, Częstochowa, Białystok, Toruń (city and room-count level, limited district detail).
 * **Portugal – available now:** gross rental yield by freguesia and deal scores for Lisbon and Porto: https://apify.com/data-nest/imovirtual-rental-yield
 * Missing a city or a metric? Open an issue on the Issues tab – requests decide what comes next.
 

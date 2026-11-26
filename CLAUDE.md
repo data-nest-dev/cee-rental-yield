@@ -711,4 +711,18 @@ Otwarte:
    - **Decyzja (punkt 1):** gdy `totalPages` jest znane ze strony 1 (albo z odpowiedzi dzielnicy), nie przerywamy na `no_new_items` — idziemy do `totalPages` albo do limitu (`quota_reached`); `MAX_STALE_PAGES` zostaje tylko jako zabezpieczenie przy nieznanym `totalPages` (górna granica `UNKNOWN_PAGES_CAP` = 400). Kafelki `INVESTMENT` i wstawki `hpr/` nie liczą się jako nowe oferty. Skutek uboczny: strona ignorująca parametr `page` przy znanym `totalPages` nie zatrzymuje się sama (limit ofert i `totalPages` ograniczają koszt).
    - **Decyzja (punkt 2):** `sample.primaryMarketUnits` = suma lokali w kafelkach (unikalne po id kafelka), `sample.reachableItems` = max(`totalItems` − `primaryMarketUnits`, pobrane), `share` = pobrane / `reachableItems` (maks. 1); progi `confidence` z §20.6 bez zmian, zmienia się tylko mianownik (przy `market=SECONDARY` kafelków nie ma). Dla grup na poziomie dzielnicy `share` liczony jak dotąd (sumy dzielnicy).
    - **Ryzyko:** w runach z 23.11 (Łódź, Gdańsk) pierwsze zapytanie najmu dostało blokadę, którą stary kod obchodził zmianą sesji. Przy nowej regule (403/429/captcha = koniec runu, §20.6) taki run kończy się bez najmu i trzeba go powtórzyć; zasada bez zmian.
+8. **Runy weryfikacyjne 2026-11-25 (build e34a983, `yieldReport`, `samplingMode city`, pełny rynek, `market` ALL, ECB 4,48; każda strona `last_page`, share 1,0, 0 blokad, razem 343 zapytania).**
+
+   | Miasto | Run ID | Yield brutto | zł/m² (EUR) | czynsz zł/m² (EUR) | sprzedaż / najem | grupy | kawalerki | lokale w kafelkach / totalItems |
+   |---|---|---|---|---|---|---|---|---|
+   | Szczecin | TQCk8MsHICvxdoZn3 | 7,02% | 10 318 (2 303) | 60,3 (13,5) | 1582 / 534 | 15 | 6,99% | 990 / 2708 |
+   | Katowice | lcbqSzKFTfi9zm6kr | 6,31% | 10 129 (2 261) | 53,2 (11,9) | 1649 / 722 | 28 | 6,75% | 3936 / 5701 |
+   | Lublin | YFN6cmkLcfdEsWaTo | 6,28% | 10 299 (2 299) | 53,9 (12,0) | 1460 / 356 | 16 | 6,44% | 1386 / 2941 |
+   | Bydgoszcz | tAp224bFET2XEzcnf | 6,03% | 10 300 (2 299) | 51,8 (11,6) | 1933 / 318 | 15 | 7,01% | 684 / 3131 |
+   | Rzeszów | Y9X7aXhp7OYFPPJII | 5,89% | 10 341 (2 308) | 50,8 (11,3) | 1534 / 393 | 13 | 5,66% | 1513 / 3333 |
+   | Gdynia | ym3mfyvG9MYlZuJen | 5,74% | 12 995 (2 901) | 62,2 (13,9) | 1601 / 473 | 19 | 5,57% | 1856 / 3551 |
+
+   - **Decyzja:** liczby z 25.11 idą tylko do README, nie do mediów (inna data i metoda niż listopadowa szóstka). Do grudniowej strony i pitchy wszystkie 12 miast z jednej rundy.
+   - **README (2026-11-26):** 12 miast, dwie tabele „Yields by city” z datami i metodą, akapit o lokalach w kafelkach (22% Bydgoszcz – 69% Katowice), przykład pełnego rynku, Roadmap (kolejne: Bielsko-Biała, Gliwice, Częstochowa, Białystok, Toruń).
+   - **Otwarte na później:** pobieranie lokali z kafelków inwestycji (dodatkowe zapytania na inwestycję).
 
