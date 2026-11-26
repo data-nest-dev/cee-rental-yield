@@ -279,12 +279,31 @@ def sort_scored(scored: list[tuple[Listing, dict]]) -> list[tuple[Listing, dict]
 
 
 def sort_listings(rows: list[tuple[Listing, dict]]) -> list[tuple[Listing, dict]]:
-    """mode listings: sale rows best deal first, then rent rows by city, district and rent per m2."""
-    scored_sale = sort_scored([r for r in rows if r[1]["transaction"] == "sale" and r[1]["dealScore"] is not None])
-    sale = scored_sale + [r for r in rows if r[1]["transaction"] == "sale" and r[1]["dealScore"] is None]
-    rent = sorted((r for r in rows if r[1]["transaction"] == "rent"),
-                  key=lambda r: (r[1]["city"], r[1]["district"] or "", r[1]["monthlyRentPerM2Eur"]))
-    return sale + rent
+    """mode listings: per city, sale and rent rows interleaved in proportion, each side in portal order (newest
+    first). A run cut short by the cost limit then returns a representative slice of both sides, not only sales."""
+    cities: dict[str, dict[str, list]] = {}
+    for item in rows:
+        cities.setdefault(item[1]["city"], {"sale": [], "rent": []})[item[1]["transaction"]].append(item)
+    result: list[tuple[Listing, dict]] = []
+    for sides in cities.values():
+        sale, rent = sides["sale"], sides["rent"]
+        i = j = 0
+        while i < len(sale) or j < len(rent):
+            # take the side that is further behind its share of the city's rows (ties: sale)
+            take_sale = j >= len(rent) or (i < len(sale) and i / len(sale) <= j / len(rent))
+            if take_sale:
+                result.append(sale[i]); i += 1
+            else:
+                result.append(rent[j]); j += 1
+    return result
+
+
+def _listings_counts(available: list[dict], delivered: list[dict]) -> str:
+    """'12 of 30 listings (sale 7 of 18, rent 5 of 12)': delivered vs available, per side."""
+    def n(rows: list[dict], tx: str) -> int:
+        return sum(r["transaction"] == tx for r in rows)
+    return (f"{len(delivered)} of {len(available)} listings (sale {n(delivered, 'sale')} of {n(available, 'sale')}, "
+            f"rent {n(delivered, 'rent')} of {n(available, 'rent')})")
 
 
 def listings_city_summary(
@@ -567,12 +586,16 @@ async def _run(
             summary["cities"][key]["listings"] = listings_city_summary(
                 CITIES[key].display_name, out, delivered_rows, bool(summary.get("isPayPerEvent")))
     if limit_reached:
-        summary["note"] = (f"Stopped below the run's maximum charge: {pushed_area} of {len(charged_area)} yield groups "
-                           f"and {pushed_scored} of {len(scored_records)} scored listings were delivered (best deals first).")
+        if run_input.wants_listings:
+            summary["note"] = ("Stopped below the run's maximum charge: " + _listings_counts(scored_records, scored_records[:pushed_scored])
+                               + " were delivered (sale and rent interleaved, newest first).")
+        else:
+            summary["note"] = (f"Stopped below the run's maximum charge: {pushed_area} of {len(charged_area)} yield groups "
+                               f"and {pushed_scored} of {len(scored_records)} scored listings were delivered (best deals first).")
     await save_summary(actor, summary, started)
     message = f"{len(outputs)} cities, {pushed_free + pushed_area} yield groups, {pushed_scored} scored listings"
     if run_input.wants_listings:
-        message = f"{len(outputs)} cities, {pushed_scored} listings"
+        message = f"{len(outputs)} cities, {_listings_counts(scored_records, scored_records[:pushed_scored])}"
     if summary.get("budgetReduced"):
         message = f"Reduced sample (max charge too low for the requested scope). {message}"
     if limit_reached:

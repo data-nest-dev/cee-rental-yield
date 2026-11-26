@@ -70,6 +70,7 @@ def build_area_yield(
 
 # `outlier` flag: asking price more than this far below the group median (CLAUDE.md section 0, decision 14.5)
 OUTLIER_DISCOUNT_PCT = 40.0
+LARGE_DISCOUNT_PCT = 30.0  # flag `large_discount`
 
 
 def build_scored_listing(
@@ -104,6 +105,8 @@ def build_scored_listing(
         dom = (date.today() - listing.first_published).days
 
     flags = list(listing.flags)
+    if discount > LARGE_DISCOUNT_PCT:
+        flags.append("large_discount")  # worth checking: renovation, auction, share of a flat
     if discount > OUTLIER_DISCOUNT_PCT:
         flags.append("outlier")
 

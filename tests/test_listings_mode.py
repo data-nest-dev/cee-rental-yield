@@ -28,10 +28,9 @@ async def test_rows_for_sale_and_rent_without_yield_rows_or_area_yield_events() 
     assert {r["transaction"] for r in rows} == {"sale", "rent"}
     assert {e for e, _ in actor.pushed} == {"scored-listing"}
     sale = [r for r in rows if r["transaction"] == "sale"]
-    scores = [r["dealScore"] for r in sale]
-    assert scores == sorted(scores, reverse=True)
-    # sale rows come before rent rows
-    assert [r["transaction"] for r in rows] == ["sale"] * len(sale) + ["rent"] * (len(rows) - len(sale))
+    # sale and rent are interleaved, not "best deals first" and not all sales before all rent
+    first_rent = next(i for i, r in enumerate(rows) if r["transaction"] == "rent")
+    assert first_rent < len(sale)
     assert not any(k in json.dumps(rows).lower() for k in ("advertowner", "agency", "phone", "@"))
 
 
@@ -228,3 +227,45 @@ async def test_outlier_far_below_group_median_is_not_returned_not_charged_and_co
     assert summary["cities"]["katowice"]["listings"]["scoredExcludedOutliers"] == base_n + 1
     assert summary["scoredExcludedOutliers"] == base_n + 1
     assert actor.charges["scored-listing"] == len(actor.records("listing"))
+
+
+def _row(city: str, tx: str, n: int) -> tuple[None, dict]:
+    return None, {"city": city, "transaction": tx, "id": f"{tx}{n}"}
+
+
+def test_interleave_gives_a_representative_slice_of_both_sides() -> None:
+    from src.pipeline import sort_listings
+    rows = [_row("A", "sale", i) for i in range(30)] + [_row("A", "rent", i) for i in range(20)]
+    first10 = [r["transaction"] for _, r in sort_listings(rows)[:10]]
+    assert first10.count("sale") == 6 and first10.count("rent") == 4          # 3:2
+    out = [r["id"] for _, r in sort_listings(rows)]
+    assert [i for i in out if i.startswith("sale")] == [f"sale{i}" for i in range(30)]   # portal order kept
+    assert [i for i in out if i.startswith("rent")] == [f"rent{i}" for i in range(20)]
+
+
+@pytest.mark.asyncio
+async def test_budget_cut_returns_both_sides_and_messages_speak_of_listings() -> None:
+    actor, _, summary = await _run(BASE, actor=PlatformPricedActor("0.0408"))   # fake price $0.004 per row: room for 10 rows
+    rows = actor.records("listing")
+    assert len(rows) == 10 and {r["transaction"] for r in rows} == {"sale", "rent"}
+    assert summary["chargeLimitReached"] and "scored" not in summary["note"] and "best deals" not in summary["note"]
+    assert "listings (sale" in summary["note"] and "rent" in summary["note"]
+    assert "listings (sale" in actor.statuses[-1] and "scored" not in actor.statuses[-1]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["scoreListings", "listings"])
+async def test_large_discount_flag_above_30_percent(mode: str) -> None:
+    actor, _, _ = await _run({**BASE, "mode": mode})
+    rows = [r for r in actor.records("listing" if mode == "listings" else "scoredListing") if r.get("dealScore") is not None]
+    assert rows
+    for r in rows:
+        assert ("large_discount" in r["flags"]) == (r["discountVsMedianPct"] > 30)
+    assert any("large_discount" in r["flags"] for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_primary_market_is_false_under_secondary_filter_in_both_modes() -> None:
+    for mode, rtype in (("scoreListings", "scoredListing"), ("listings", "listing")):
+        actor, _, _ = await _run({**BASE, "mode": mode, "includePrimaryMarket": False})
+        assert {r["isPrimaryMarket"] for r in actor.records(rtype)} == {False}

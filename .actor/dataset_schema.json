@@ -184,7 +184,7 @@
                     "null"
                 ],
                 "title": "Flags",
-                "description": "Reasons to check the listing: `needsRenovation`, `suspectRooms` (room count looks wrong for the area; the listing is compared at city level only).",
+                "description": "Reasons to check the listing: `needsRenovation`, `suspectRooms` (room count looks wrong for the area; the listing is compared at city level only), `large_discount` (priced more than 30% below its comparable group: worth checking for renovation, auction or a share of a flat).",
                 "items": {
                     "type": "string"
                 }

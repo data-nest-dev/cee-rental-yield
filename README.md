@@ -92,7 +92,7 @@ More inputs are under *Example inputs* below.
 - **Rent rows** have `transaction: "rent"`, the monthly rent and `monthlyRentPerM2Eur`; all sale-side fields are `null`.
 - Where the comparable group has `low` confidence, or no rent group reaches `minRentSample` rentals, the estimate fields are `null` and `estimateNote` says why. The deal score is still returned. Flats in a city with too few listings for sale to compare are still returned (and charged), with `dealScore` and the estimates `null`.
 - Listings with a price far below their group median (`outlier`) are not returned and not charged; `RUN_SUMMARY` counts them per city.
-- Sale rows come first, best deal first, then rent rows. `minScore` (sale rows only; it also drops sale rows without a score), `rooms` and `areaMin`/`areaMax` apply as in the other modes. `maxScoredListings` is ignored: the number of rows follows from the sample (`maxListingsPerSide` or the per-district quota) and the exclusions.
+- Per city, sale and rent rows are interleaved in the portal's order (newest first), so a run stopped by your maximum charge returns a representative slice of both sides. `minScore` (sale rows only; it also drops sale rows without a score), `rooms` and `areaMin`/`areaMax` apply as in the other modes. `maxScoredListings` is ignored: the number of rows follows from the sample (`maxListingsPerSide` or the per-district quota) and the exclusions.
 - `RUN_SUMMARY.cities.*.listings` reports `saleRows`, `rentRows`, `withEstimate`, `withoutEstimate`, `scoredExcludedOutliers` and `charged`.
 
 ```json
@@ -221,6 +221,7 @@ A `scoredListing` record (example values):
 
 - `needsRenovation` – the listing says the flat needs renovation. It stays in the results and in the medians, so a cheap price may reflect the condition.
 - `suspectRooms` – less than 8 m² per room (for example 7 rooms in 27 m²), so the room count looks wrong. The listing is compared at city level only, not within a room group; `rooms` in the record is unchanged.
+- `large_discount` – the asking price is more than 30% below the comparable group's median (renovation, auction or a share of a flat are possible reasons), so it is worth checking before you rely on the score.
 - Listings priced more than 40% below their group's median are an `outlier`: they are far more likely a data problem than a deal, so they are not returned, not scored in the output and not charged. They are counted in `scoredExcludedOutliers` in `RUN_SUMMARY`.
 
 Identical listings for sale (same district, rooms, area and price, for example identical units of one development) are merged into one record, the one with the lowest listing ID. The other IDs are in `identicalListingIds`; the group counts once in the medians, the deal score and the charges (`identicalMerged` in `RUN_SUMMARY`).
