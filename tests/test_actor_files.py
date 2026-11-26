@@ -25,7 +25,7 @@ def test_actor_json_declares_default_and_yields_datasets_with_existing_schema_fi
 
 def test_yields_schema_has_only_the_yield_view_and_default_leads_with_scored_listings() -> None:
     assert list(_load("yields_dataset_schema.json")["views"]) == ["yields"]
-    assert list(_load("dataset_schema.json")["views"]) == ["overview", "listings", "yields"]
+    assert list(_load("dataset_schema.json")["views"]) == ["overview", "yields", "listings"]
 
 
 def test_output_schema_links_both_datasets() -> None:

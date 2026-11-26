@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from src.fx import convert_to_eur
 from src.models import AreaYield, Listing, ScoredListing
@@ -179,6 +179,7 @@ def build_side_summary(
 LISTING_RECORD_TYPE = "listing"
 RENT_ESTIMATE_ROUNDING = 10  # estimatedMonthlyRentPln is rounded to 10 PLN
 NOTE_LOW_CONFIDENCE = "Low-confidence comparable group (city level): no rent or yield estimate."
+NOTE_NO_COMPARABLES = "Too few listings for sale in the city to compare with: no deal score and no estimates."
 NOTE_FEW_RENTS = "Fewer rent listings in the comparable group than minRentSample: no rent or yield estimate."
 
 _SALE_ONLY_NULLS = (
@@ -188,10 +189,37 @@ _SALE_ONLY_NULLS = (
 )
 
 
+def _group_part(level: str | None, listing: Listing) -> dict:
+    """district / rooms of the group a listing was compared with (null at the levels that do not narrow them)."""
+    return {
+        "groupLevel": level,
+        "district": listing.district if level == "district" else None,
+        "rooms": listing_rooms_bucket(listing) if level in ("district", "city_rooms") else None,
+    }
+
+
 def build_sale_listing_row(
-    listing: Listing, comparables: ListingComparables, fx_rates: dict[str, float],
+    listing: Listing, comparables: ListingComparables | None, fx_rates: dict[str, float],
 ) -> dict:
-    """A scoredListing record turned into a listings row: same deal score, estimate fields renamed and made explicit."""
+    """A listings row for a flat for sale. With comparables it is a scoredListing record with the estimate fields
+    made explicit; without them (too few sales to compare) the analytics are null and estimateNote says why."""
+    if comparables is None:
+        price_eur = convert_to_eur(listing.price_local, listing.currency, fx_rates)
+        dom = (date.today() - listing.first_published).days if listing.first_published else None
+        rec = {
+            "source": listing.source, "listingId": listing.listing_id, "url": listing.url,
+            "country": listing.country, "city": listing.city, "district": listing.district,
+            "rooms": listing.rooms, "areaM2": listing.area_m2, "isPrimaryMarket": listing.is_primary_market,
+            "price": {"local": listing.price_local, "currency": listing.currency, "eur": round(price_eur)},
+            "pricePerM2Eur": round(price_eur / listing.area_m2),
+            "daysOnMarket": dom, "flags": list(listing.flags),
+            "identicalListingIds": sorted(listing.identical_ids, key=lambda i: (0, int(i)) if i.isdigit() else (1, i)),
+            "firstSeenAt": None, "changeType": None, "priceCutPct": None,
+        }
+        rec.update({k: None for k in _SALE_ONLY_NULLS if k not in rec})
+        rec.update(recordType=LISTING_RECORD_TYPE, transaction="sale", monthlyRentPerM2Eur=None,
+                   estimateNote=NOTE_NO_COMPARABLES)
+        return rec
     rec = build_scored_listing(listing, comparables, fx_rates)
     for old in ("recordType", "estimatedRentMonthlyEur", "grossYieldPct"):
         rec.pop(old)
@@ -207,7 +235,6 @@ def build_sale_listing_row(
         rent_pln = round(rent_per_m2 * listing.area_m2 / step) * step
         rent_eur = round(convert_to_eur(rent_pln, listing.currency, fx_rates))
         gross = round(12 * rent_pln / listing.price_local * 100, 2)
-    sale_level = comparables.sale_level
     rec.update({
         "recordType": LISTING_RECORD_TYPE,
         "transaction": "sale",
@@ -217,13 +244,9 @@ def build_sale_listing_row(
         "estimateNote": note,
         "monthlyRentPerM2Eur": None,
         "comparable": {
-            "groupLevel": sale_level,
-            "rentGroupLevel": comparables.rent_level,
-            "district": listing.district if sale_level == "district" else None,
-            "rooms": listing_rooms_bucket(listing) if sale_level != "city" else None,
-            "confidence": comparables.confidence,
-            "saleCount": len(comparables.sale_listings),
-            "rentCount": len(comparables.rent_listings),
+            "sale": {**_group_part(comparables.sale_level, listing),
+                     "saleCount": len(comparables.sale_listings), "confidence": comparables.confidence},
+            "rent": {**_group_part(comparables.rent_level, listing), "rentCount": len(comparables.rent_listings)},
         },
     })
     return rec
@@ -231,7 +254,6 @@ def build_sale_listing_row(
 
 def build_rent_listing_row(listing: Listing, fx_rates: dict[str, float]) -> dict:
     """A rental listing: our own derived fields only; every sale-side field is null."""
-    from datetime import date
     rent_eur = convert_to_eur(listing.price_local, listing.currency, fx_rates)
     dom = (date.today() - listing.first_published).days if listing.first_published else None
     row = {

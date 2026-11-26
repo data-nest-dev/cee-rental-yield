@@ -178,6 +178,9 @@ def compute_city(city: CityResult, run_input: RunInput, rates: dict[str, float],
             comp = resolve_comparables(ls, index, run_input.min_sale_sample, run_input.min_rent_sample, share)
             if comp is None:
                 not_comparable += 1
+                if run_input.wants_listings and run_input.min_score == 0:
+                    # listings mode keeps (and charges) flats without a comparable group, with null analytics
+                    scored.append((ls, build_sale_listing_row(ls, None, rates)))
                 continue
             build = build_sale_listing_row if run_input.wants_listings else build_scored_listing
             rec = build(ls, comp, rates)
@@ -277,7 +280,8 @@ def sort_scored(scored: list[tuple[Listing, dict]]) -> list[tuple[Listing, dict]
 
 def sort_listings(rows: list[tuple[Listing, dict]]) -> list[tuple[Listing, dict]]:
     """mode listings: sale rows best deal first, then rent rows by city, district and rent per m2."""
-    sale = sort_scored([r for r in rows if r[1]["transaction"] == "sale"])
+    scored_sale = sort_scored([r for r in rows if r[1]["transaction"] == "sale" and r[1]["dealScore"] is not None])
+    sale = scored_sale + [r for r in rows if r[1]["transaction"] == "sale" and r[1]["dealScore"] is None]
     rent = sorted((r for r in rows if r[1]["transaction"] == "rent"),
                   key=lambda r: (r[1]["city"], r[1]["district"] or "", r[1]["monthlyRentPerM2Eur"]))
     return sale + rent
@@ -489,7 +493,7 @@ async def _run(
 
     # maxScoredListings applies after every filter and after sorting, so the cap keeps the best deals.
     scored_available = len(scored)
-    if run_input.max_scored_listings:
+    if run_input.max_scored_listings and not run_input.wants_listings:  # listings mode: no row cap
         scored = scored[:run_input.max_scored_listings]
     summary["scoredAvailable"] = scored_available
 

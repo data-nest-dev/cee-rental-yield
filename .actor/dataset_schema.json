@@ -367,7 +367,7 @@
                     "null"
                 ],
                 "title": "Estimate note",
-                "description": "Why the rent and yield estimates are null, if they are."
+                "description": "Why the analytics or the rent and yield estimates are null, if they are."
             },
             "comparable": {
                 "type": [
@@ -375,7 +375,7 @@
                     "null"
                 ],
                 "title": "Comparable group",
-                "description": "Mode listings, sale rows: the group the deal score and estimate are based on (`groupLevel`, `rentGroupLevel`, `district`, `rooms`, `confidence`, `saleCount`, `rentCount`)."
+                "description": "Mode listings, sale rows: the groups behind the score and the estimate. `sale`: `groupLevel`, `district`, `rooms`, `saleCount`, `confidence`. `rent`: `groupLevel`, `district`, `rooms`, `rentCount` (null group level when no level reaches minRentSample). `district` / `rooms` are null at the levels that do not narrow them."
             },
             "monthlyRentPerM2Eur": {
                 "type": [
@@ -470,82 +470,6 @@
                 }
             }
         },
-        "listings": {
-            "title": "Listings",
-            "description": "Mode listings: every flat for sale and for rent, sale rows best deal first.",
-            "transformation": {
-                "fields": [
-                    "transaction",
-                    "city",
-                    "district",
-                    "rooms",
-                    "areaM2",
-                    "price.local",
-                    "price.eur",
-                    "pricePerM2Eur",
-                    "dealScore",
-                    "estimatedMonthlyRentPln",
-                    "estimatedGrossYieldPct",
-                    "url"
-                ],
-                "flatten": [
-                    "price"
-                ]
-            },
-            "display": {
-                "component": "table",
-                "properties": {
-                    "transaction": {
-                        "label": "Sale / rent",
-                        "format": "text"
-                    },
-                    "city": {
-                        "label": "City",
-                        "format": "text"
-                    },
-                    "district": {
-                        "label": "District",
-                        "format": "text"
-                    },
-                    "rooms": {
-                        "label": "Rooms",
-                        "format": "number"
-                    },
-                    "areaM2": {
-                        "label": "Area m²",
-                        "format": "number"
-                    },
-                    "price.local": {
-                        "label": "Price (local currency)",
-                        "format": "number"
-                    },
-                    "price.eur": {
-                        "label": "Price (EUR)",
-                        "format": "number"
-                    },
-                    "pricePerM2Eur": {
-                        "label": "EUR/m²",
-                        "format": "number"
-                    },
-                    "dealScore": {
-                        "label": "Deal score",
-                        "format": "number"
-                    },
-                    "estimatedMonthlyRentPln": {
-                        "label": "Est. rent PLN/month",
-                        "format": "number"
-                    },
-                    "estimatedGrossYieldPct": {
-                        "label": "Est. gross yield %",
-                        "format": "number"
-                    },
-                    "url": {
-                        "label": "Listing",
-                        "format": "link"
-                    }
-                }
-            }
-        },
         "yields": {
             "title": "Rental yield by district",
             "description": "One row per district and room group (areaYield records). Filled only when mode is yieldReport; otherwise see the yields dataset.",
@@ -621,6 +545,82 @@
                     "fx.date": {
                         "label": "ECB rate date",
                         "format": "text"
+                    }
+                }
+            }
+        },
+        "listings": {
+            "title": "Listings",
+            "description": "Mode listings: every flat for sale and for rent, sale rows best deal first.",
+            "transformation": {
+                "fields": [
+                    "transaction",
+                    "city",
+                    "district",
+                    "rooms",
+                    "areaM2",
+                    "price.local",
+                    "price.eur",
+                    "pricePerM2Eur",
+                    "dealScore",
+                    "estimatedMonthlyRentPln",
+                    "estimatedGrossYieldPct",
+                    "url"
+                ],
+                "flatten": [
+                    "price"
+                ]
+            },
+            "display": {
+                "component": "table",
+                "properties": {
+                    "transaction": {
+                        "label": "Sale / rent",
+                        "format": "text"
+                    },
+                    "city": {
+                        "label": "City",
+                        "format": "text"
+                    },
+                    "district": {
+                        "label": "District",
+                        "format": "text"
+                    },
+                    "rooms": {
+                        "label": "Rooms",
+                        "format": "number"
+                    },
+                    "areaM2": {
+                        "label": "Area m²",
+                        "format": "number"
+                    },
+                    "price.local": {
+                        "label": "Price (local currency)",
+                        "format": "number"
+                    },
+                    "price.eur": {
+                        "label": "Price (EUR)",
+                        "format": "number"
+                    },
+                    "pricePerM2Eur": {
+                        "label": "EUR/m²",
+                        "format": "number"
+                    },
+                    "dealScore": {
+                        "label": "Deal score",
+                        "format": "number"
+                    },
+                    "estimatedMonthlyRentPln": {
+                        "label": "Est. rent PLN/month",
+                        "format": "number"
+                    },
+                    "estimatedGrossYieldPct": {
+                        "label": "Est. gross yield %",
+                        "format": "number"
+                    },
+                    "url": {
+                        "label": "Listing",
+                        "format": "link"
                     }
                 }
             }

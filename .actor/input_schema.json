@@ -52,7 +52,7 @@
         "mode": {
             "title": "What to return",
             "type": "string",
-            "description": "listings: every listing for sale and for rent with our analytics (deal score, estimated rent and yield for sales), one row each, no yield rows. yieldReport: gross rental yield per district and room count. scoreListings: a 0–100 deal score for every listing for sale. both: yield report and scored listings. maxScoredListings, minScore and rooms apply to listings rows too (minScore only to sale rows).",
+            "description": "listings: every listing for sale and for rent with our analytics (deal score, estimated rent and yield for sales), one row each, no yield rows; the number of rows follows from maxListingsPerSide / the district quota, maxScoredListings is ignored. yieldReport: gross rental yield per district and room count. scoreListings: a 0–100 deal score for every listing for sale. both: yield report and scored listings. rooms and areaMin/areaMax apply to listings rows too, minScore only to sale rows.",
             "editor": "select",
             "enum": [
                 "both",
@@ -125,7 +125,7 @@
         "maxScoredListings": {
             "title": "Maximum scored listings",
             "type": "integer",
-            "description": "Return at most this many listings, best deals first. 0 = all.",
+            "description": "Return at most this many listings, best deals first. 0 = all. Ignored in mode listings.",
             "minimum": 0,
             "maximum": 1000000,
             "default": 1000

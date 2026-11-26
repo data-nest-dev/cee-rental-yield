@@ -63,7 +63,8 @@ def estimate_records(run_input: RunInput) -> int:
         available = AVAILABLE_SCORED_PER_CITY * cities
     else:
         available = int(CITY_MODE_YIELD * run_input.max_listings_per_side) * cities
-    scored = min(run_input.max_scored_listings or available, available) if run_input.wants_scores or run_input.wants_listings else 0
+    cap = 0 if run_input.wants_listings else run_input.max_scored_listings  # listings mode has no row cap
+    scored = min(cap or available, available) if run_input.wants_scores or run_input.wants_listings else 0
     groups = GROUPS_PER_CITY * cities if run_input.wants_yields else 0
     return groups + scored
 

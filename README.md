@@ -88,15 +88,15 @@ More inputs are under *Example inputs* below.
 
 `mode: "listings"` returns **every listing, for sale and for rent, one row each**, and adds our analytics to the sale rows. It costs **$1 per 1,000 listings** (Free plan price; lower on higher plans), one `scored-listing` event per row written. No yield rows are written and no `area-yield` events are charged; the group medians are still computed because the scores and estimates rest on them.
 
-- **Sale rows** have `transaction: "sale"`, the 0–100 `dealScore`, `discountVsMedianPct`, `estimatedMonthlyRentPln` (median rent per m² of the comparable group × the flat's area, rounded to 10 PLN), `estimatedMonthlyRentEur`, `estimatedGrossYieldPct` (12 × estimated rent ÷ asking price) and `comparable`, the group behind the score (`groupLevel`, `rentGroupLevel`, `district`, `rooms`, `confidence`, `saleCount`, `rentCount`).
+- **Sale rows** have `transaction: "sale"`, the 0–100 `dealScore`, `discountVsMedianPct`, `estimatedMonthlyRentPln` (median rent per m² of the comparable group × the flat's area, rounded to 10 PLN), `estimatedMonthlyRentEur`, `estimatedGrossYieldPct` (12 × estimated rent ÷ asking price) and `comparable`, the groups behind the score and the estimate: `sale` (`groupLevel`, `district`, `rooms`, `saleCount`, `confidence`) and `rent` (`groupLevel`, `district`, `rooms`, `rentCount`). The rent group is the first of district × rooms, city × rooms and city with at least `minRentSample` rentals.
 - **Rent rows** have `transaction: "rent"`, the monthly rent and `monthlyRentPerM2Eur`; all sale-side fields are `null`.
-- Where the comparable group has `low` confidence, or too few rentals (below `minRentSample`), the estimate fields are `null` and `estimateNote` says why. The deal score is still returned.
+- Where the comparable group has `low` confidence, or no rent group reaches `minRentSample` rentals, the estimate fields are `null` and `estimateNote` says why. The deal score is still returned. Flats in a city with too few listings for sale to compare are still returned (and charged), with `dealScore` and the estimates `null`.
 - Listings with a price far below their group median (`outlier`) are not returned and not charged; `RUN_SUMMARY` counts them per city.
-- Sale rows come first, best deal first, then rent rows. `maxScoredListings` (default 1,000; 0 = all), `minScore` (sale rows only), `rooms` and `areaMin`/`areaMax` apply as in the other modes. **Set `maxScoredListings` to 0 to get every listing.**
+- Sale rows come first, best deal first, then rent rows. `minScore` (sale rows only; it also drops sale rows without a score), `rooms` and `areaMin`/`areaMax` apply as in the other modes. `maxScoredListings` is ignored: the number of rows follows from the sample (`maxListingsPerSide` or the per-district quota) and the exclusions.
 - `RUN_SUMMARY.cities.*.listings` reports `saleRows`, `rentRows`, `withEstimate`, `withoutEstimate`, `scoredExcludedOutliers` and `charged`.
 
 ```json
-{"cities": ["krakow"], "mode": "listings", "maxScoredListings": 0}
+{"cities": ["krakow"], "mode": "listings"}
 ```
 
 A sale row (example values):
@@ -111,8 +111,10 @@ A sale row (example values):
   "dealScore": 87, "discountVsMedianPct": 12.95,
   "estimatedMonthlyRentPln": 2970, "estimatedMonthlyRentEur": 695, "estimatedGrossYieldPct": 5.84,
   "estimateNote": null,
-  "comparable": {"groupLevel": "district", "rentGroupLevel": "district", "district": "Podgórze", "rooms": "2",
-                 "confidence": "high", "saleCount": 112, "rentCount": 64},
+  "comparable": {
+    "sale": {"groupLevel": "district", "district": "Podgórze", "rooms": "2", "saleCount": 112, "confidence": "high"},
+    "rent": {"groupLevel": "district", "district": "Podgórze", "rooms": "2", "rentCount": 64}
+  },
   "saleGroupLevel": "district", "rentGroupLevel": "district", "confidence": "high",
   "daysOnMarket": 38, "flags": [], "identicalListingIds": []
 }
