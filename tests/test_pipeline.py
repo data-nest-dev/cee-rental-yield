@@ -406,7 +406,7 @@ from decimal import Decimal
 
 from src.charging import affordable_count
 
-PLATFORM_PRICES = {"area-yield": Decimal("0.02"), "scored-listing": Decimal("0.004"),
+PLATFORM_PRICES = {"area-yield": Decimal("0.02"), "scored-listing": Decimal("0.001"),
                    "apify-actor-start": Decimal("0.00005")}  # no apify-default-dataset-item (removed in Console)
 
 
@@ -453,11 +453,11 @@ async def test_platform_prices_with_one_cent_limit(mode: str) -> None:
     assert "area-yield" not in events                       # never affordable at $0.02, never attempted
     area, scored = actor.records("areaYield"), actor.records("scoredListing")
     assert area and all(r["confidence"] == "low" for r in area)   # free city context, in both modes
-    assert len(scored) == 2                                  # 0.00995 left -> 2 x $0.004
+    assert len(scored) == 9                                  # 0.00995 left -> 9 x $0.001
     best = sorted((r["dealScore"] for r in scored), reverse=True)
     assert [r["dealScore"] for r in scored] == best
-    assert actor.charges == {"apify-actor-start": 1, "scored-listing": 2}
-    assert actor.charged_usd == Decimal("0.00805") < actor.max_usd
+    assert actor.charges == {"apify-actor-start": 1, "scored-listing": 9}
+    assert actor.charged_usd == Decimal("0.00905") < actor.max_usd
     assert summary["chargeLimitReached"] is True
 
 

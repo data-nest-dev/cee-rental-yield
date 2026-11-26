@@ -6,7 +6,7 @@ from decimal import Decimal
 
 # Event names exactly as entered in Apify Console (Monetization -> pay per event).
 AREA_YIELD_EVENT = "area-yield"          # $0.02 per areaYield with confidence high or medium
-SCORED_LISTING_EVENT = "scored-listing"  # $0.004 per scoredListing
+SCORED_LISTING_EVENT = "scored-listing"  # $0.001 per scoredListing or listing (Free plan)
 CHARGED_CONFIDENCE = ("high", "medium")
 # Synthetic platform event charged per item written to the default dataset when it has a price
 # (on by default for new PPE Actors; this Actor expects it removed in Console, but never relies on it).

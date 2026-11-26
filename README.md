@@ -267,7 +267,7 @@ By default a run returns at most 1,000 scored listings, best deals first (`maxSc
 
 To spend less: `mode: "yieldReport"` returns only the yield groups (about $2 for Warsaw and Kraków); `maxScoredListings`, `minScore` and `rooms` reduce the number of scored listings; and you can set a maximum charge per run. When that maximum is close, the run stops cleanly, staying below it, after delivering free city-level context, the yield groups and the best-scored listings first.
 
-**Very low maximum charge.** The Actor collects the whole sample before it returns any result. If your maximum charge per run is too low to justify that (below about $0.03 with default settings), the run uses a smaller sample instead: the first city in your list, the 360 newest listings for sale and for rent, whole-city comparison. The run still succeeds and returns free city-level context plus what your limit covers (for example 2 scored listings at $0.01), never an event type you did not ask for, and `RUN_SUMMARY` shows `budgetReduced: true`. **Recommended minimum for the default run: $0.05.**
+**Very low maximum charge.** The Actor collects the whole sample before it returns any result. If your maximum charge per run is too low to justify that (below about $0.03 with default settings), the run uses a smaller sample instead: the first city in your list, the 360 newest listings for sale and for rent, whole-city comparison. The run still succeeds and returns free city-level context plus what your limit covers (for example 9 scored listings at $0.01), never an event type you did not ask for, and `RUN_SUMMARY` shows `budgetReduced: true`. **Recommended minimum for the default run: $0.05.**
 
 ## What a report costs
 

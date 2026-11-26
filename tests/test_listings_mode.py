@@ -93,7 +93,7 @@ async def test_run_summary_counts_per_city_and_no_yield_report_groups() -> None:
 
 @pytest.mark.asyncio
 async def test_each_row_is_one_scored_listing_event_and_the_limit_is_respected() -> None:
-    actor, _, summary = await _run(BASE, actor=PlatformPricedActor("0.02"))
+    actor, _, summary = await _run(BASE, actor=PlatformPricedActor("0.01"))
     n = len(actor.records("listing"))
     assert actor.failed is None and actor.charges["scored-listing"] == n
     assert "area-yield" not in actor.charges
@@ -245,7 +245,7 @@ def test_interleave_gives_a_representative_slice_of_both_sides() -> None:
 
 @pytest.mark.asyncio
 async def test_budget_cut_returns_both_sides_and_messages_speak_of_listings() -> None:
-    actor, _, summary = await _run(BASE, actor=PlatformPricedActor("0.0408"))   # fake price $0.004 per row: room for 10 rows
+    actor, _, summary = await _run(BASE, actor=PlatformPricedActor("0.0108"))   # $0.001 per row: room for 10 rows
     rows = actor.records("listing")
     assert len(rows) == 10 and {r["transaction"] for r in rows} == {"sale", "rent"}
     assert summary["chargeLimitReached"] and "scored" not in summary["note"] and "best deals" not in summary["note"]

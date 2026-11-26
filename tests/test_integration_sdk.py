@@ -11,7 +11,7 @@ from pathlib import Path
 HARNESS = Path(__file__).parent / "sdk_harness.py"
 # Platform prices; apify-default-dataset-item is listed at $0 to emulate "removed in Console"
 # (locally the SDK prices any unlisted event at $1, on the platform at $0).
-PRICES = {"area-yield": 0.02, "scored-listing": 0.004, "apify-actor-start": 0.00005, "apify-default-dataset-item": 0}
+PRICES = {"area-yield": 0.02, "scored-listing": 0.001, "apify-actor-start": 0.00005, "apify-default-dataset-item": 0}
 
 
 def _run(tmp_path: Path, scenario: dict, max_usd: str) -> tuple[subprocess.CompletedProcess, Path]:
@@ -43,7 +43,7 @@ def _kv(storage: Path, store: str, key: str) -> dict:
 def _charged(summary: dict) -> Decimal:
     ev = summary["events"]
     return (Decimal("0.00005") + Decimal("0.02") * ev["area-yield"]["charged"]
-            + Decimal("0.004") * ev["scored-listing"]["charged"])
+            + Decimal("0.001") * ev["scored-listing"]["charged"])
 
 
 def test_limit_mid_way_orders_yields_then_best_deals_and_stays_below_limit(tmp_path: Path) -> None:
@@ -60,9 +60,9 @@ def test_limit_mid_way_orders_yields_then_best_deals_and_stays_below_limit(tmp_p
     assert yields and all(i["recordType"] == "areaYield" for i in yields)
     assert yields[0]["confidence"] == "low"                                   # free context first
     scores = [i["dealScore"] for i in items]
-    assert len(scores) == 4 and scores == sorted(scores, reverse=True)       # best deals first
+    assert len(scores) == 19 and scores == sorted(scores, reverse=True)       # best deals first
     assert summary["events"]["area-yield"]["charged"] == 4                    # Actor.charge on the aliased dataset
-    assert _charged(summary) == Decimal("0.09605") < Decimal("0.10")
+    assert _charged(summary) == Decimal("0.09905") < Decimal("0.10")
     report = _kv(storage, "default", "YIELD_REPORT")
     reported = [g for c in report["cities"].values() for g in c["groups"]]
     assert len(reported) == len(yields)                                       # only delivered groups
@@ -76,21 +76,21 @@ def test_listings_held_back_by_the_limit_are_not_marked_seen(tmp_path: Path) -> 
     summary = _kv(storage, "default", "RUN_SUMMARY")
     state = _kv(storage, "cee-rental-yield-state", "watch-1")
     delivered = [i for i in _dataset(storage) if i["recordType"] == "scoredListing"]  # monitoring test; default dataset
-    assert summary["budgetReduced"] is True and len(delivered) == 2
-    assert len(state) == 2                                     # only the delivered listings are now "seen"
-    assert summary["monitoring"]["heldBack"] == summary["scoredAvailable"] - 2
+    assert summary["budgetReduced"] is True and len(delivered) == 9
+    assert len(state) == 9                                     # only the delivered listings are now "seen"
+    assert summary["monitoring"]["heldBack"] == summary["scoredAvailable"] - 9
 
 
-def test_one_cent_limit_succeeds_with_free_context_and_two_listings(tmp_path: Path) -> None:
+def test_one_cent_limit_succeeds_with_free_context_and_nine_listings(tmp_path: Path) -> None:
     proc, storage = _run(tmp_path, {"input": {"cities": ["warszawa", "krakow"]}}, "0.01")
     assert proc.returncode == 0, proc.stderr[-2000:]
     summary = _kv(storage, "default", "RUN_SUMMARY")
     items = _dataset(storage)
     yields = _dataset(storage, "yields")
     assert summary["budgetReduced"] is True
-    assert [i["recordType"] for i in items] == ["scoredListing"] * 2
+    assert [i["recordType"] for i in items] == ["scoredListing"] * 9
     assert yields and all(i["confidence"] == "low" for i in yields)
-    assert _charged(summary) == Decimal("0.00805")
+    assert _charged(summary) == Decimal("0.00905")
 
 
 def test_yield_report_copy_to_yields_dataset_is_not_charged(tmp_path: Path) -> None:
