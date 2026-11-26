@@ -7,10 +7,11 @@
             "recordType": {
                 "type": "string",
                 "title": "Record type",
-                "description": "`scoredListing` (an apartment for sale) or `areaYield` (a district × room group). Both can appear in the default dataset when mode is yieldReport.",
+                "description": "`scoredListing` (an apartment for sale), `areaYield` (a district × room group) or `listing` (mode listings: a flat for sale or for rent). Both scoredListing and areaYield can appear in the default dataset when mode is yieldReport.",
                 "enum": [
                     "scoredListing",
-                    "areaYield"
+                    "areaYield",
+                    "listing"
                 ]
             },
             "source": {
@@ -327,6 +328,62 @@
                 ],
                 "title": "Computed at",
                 "description": "Yield records: UTC timestamp."
+            },
+            "transaction": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Transaction",
+                "description": "`sale` or `rent` (mode listings)."
+            },
+            "estimatedMonthlyRentPln": {
+                "type": [
+                    "number",
+                    "null"
+                ],
+                "title": "Estimated rent (PLN/month)",
+                "description": "Mode listings, sale rows: median rent per m² of the comparable group × the flat's area, rounded to 10 PLN. Null when the group has low confidence or too few rentals (see estimateNote)."
+            },
+            "estimatedMonthlyRentEur": {
+                "type": [
+                    "number",
+                    "null"
+                ],
+                "title": "Estimated rent (EUR/month)",
+                "description": "Mode listings, sale rows: the same estimate in EUR (ECB daily rate). In other modes, see estimatedRentMonthlyEur."
+            },
+            "estimatedGrossYieldPct": {
+                "type": [
+                    "number",
+                    "null"
+                ],
+                "title": "Estimated gross yield %",
+                "description": "Mode listings, sale rows: 12 × estimatedMonthlyRentPln ÷ asking price × 100."
+            },
+            "estimateNote": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Estimate note",
+                "description": "Why the rent and yield estimates are null, if they are."
+            },
+            "comparable": {
+                "type": [
+                    "object",
+                    "null"
+                ],
+                "title": "Comparable group",
+                "description": "Mode listings, sale rows: the group the deal score and estimate are based on (`groupLevel`, `rentGroupLevel`, `district`, `rooms`, `confidence`, `saleCount`, `rentCount`)."
+            },
+            "monthlyRentPerM2Eur": {
+                "type": [
+                    "number",
+                    "null"
+                ],
+                "title": "Rent per m² (EUR/month)",
+                "description": "Mode listings, rent rows: monthly rent per m² in EUR."
             }
         },
         "additionalProperties": true
@@ -409,6 +466,82 @@
                     "flags": {
                         "label": "Flags",
                         "format": "array"
+                    }
+                }
+            }
+        },
+        "listings": {
+            "title": "Listings",
+            "description": "Mode listings: every flat for sale and for rent, sale rows best deal first.",
+            "transformation": {
+                "fields": [
+                    "transaction",
+                    "city",
+                    "district",
+                    "rooms",
+                    "areaM2",
+                    "price.local",
+                    "price.eur",
+                    "pricePerM2Eur",
+                    "dealScore",
+                    "estimatedMonthlyRentPln",
+                    "estimatedGrossYieldPct",
+                    "url"
+                ],
+                "flatten": [
+                    "price"
+                ]
+            },
+            "display": {
+                "component": "table",
+                "properties": {
+                    "transaction": {
+                        "label": "Sale / rent",
+                        "format": "text"
+                    },
+                    "city": {
+                        "label": "City",
+                        "format": "text"
+                    },
+                    "district": {
+                        "label": "District",
+                        "format": "text"
+                    },
+                    "rooms": {
+                        "label": "Rooms",
+                        "format": "number"
+                    },
+                    "areaM2": {
+                        "label": "Area m²",
+                        "format": "number"
+                    },
+                    "price.local": {
+                        "label": "Price (local currency)",
+                        "format": "number"
+                    },
+                    "price.eur": {
+                        "label": "Price (EUR)",
+                        "format": "number"
+                    },
+                    "pricePerM2Eur": {
+                        "label": "EUR/m²",
+                        "format": "number"
+                    },
+                    "dealScore": {
+                        "label": "Deal score",
+                        "format": "number"
+                    },
+                    "estimatedMonthlyRentPln": {
+                        "label": "Est. rent PLN/month",
+                        "format": "number"
+                    },
+                    "estimatedGrossYieldPct": {
+                        "label": "Est. gross yield %",
+                        "format": "number"
+                    },
+                    "url": {
+                        "label": "Listing",
+                        "format": "link"
                     }
                 }
             }

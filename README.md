@@ -26,14 +26,15 @@ Data from 2026-11-23, asking prices; an excerpt of the 20 groups returned for Ł
 ## How to use it without code
 
 1. Open the Actor in Apify Console.
-2. Choose the cities and the mode: `yieldReport`, `scoreListings` or `both`.
+2. Choose the cities and the mode: `listings`, `yieldReport`, `scoreListings` or `both`.
 3. Click **Start**.
 4. Download the results as Excel, CSV or JSON from the Output tab. Yield groups are in the `yields` dataset, except in `yieldReport` mode, where they are in the default dataset.
 
-The first run with the default example (prefill: Warsaw, the 360 newest listings) costs about $1.70 and takes under a minute.
+The first run with the default example (prefill: Warsaw, the 360 newest listings) costs about $0.60 and takes under a minute.
 
 ## What you get
 
+- **Listings** (`listing` records, `mode: "listings"`): every flat for sale and for rent, one row each, with our analytics on the sale rows. The cheapest way to use the Actor (see *Listings mode*).
 - **Yield by district** (`areaYield` records): for every district × room group, the median sale price per m², the median monthly rent per m², quartiles, the number of listings behind each number, and the gross yield with a range. Groups with too few listings fall back to the city level and say so (`groupLevel`, `confidence`).
 - **Scored listings** (`scoredListing` records): for every apartment for sale, a 0–100 deal score, its discount against comparable flats, an estimated monthly rent and gross yield, and a link to the listing. Sorted best deal first.
 - **Sample transparency**: every yield record reports how recent its sample is (median age, oldest listing) and what share of all listings it covers. The share is measured against `reachableItems`, the portal's total minus `primaryMarketUnits` (flats inside development projects, which the portal lists as a single tile each); both numbers are in the `sample` block.
@@ -82,6 +83,54 @@ Run with no settings to analyse Warsaw and Kraków:
 More inputs are under *Example inputs* below.
 
 **Proxy.** By default the Actor uses Apify Proxy in automatic mode, with the proxy groups available to your own account. You can pass your own `proxyConfiguration` instead. If Apify Proxy refuses the connection, for example because the selected group is not available to your account, the run fails with a message saying so, and none of the result events are charged.
+
+## Listings mode
+
+`mode: "listings"` returns **every listing, for sale and for rent, one row each**, and adds our analytics to the sale rows. It costs **$1 per 1,000 listings** (Free plan price; lower on higher plans), one `scored-listing` event per row written. No yield rows are written and no `area-yield` events are charged; the group medians are still computed because the scores and estimates rest on them.
+
+- **Sale rows** have `transaction: "sale"`, the 0–100 `dealScore`, `discountVsMedianPct`, `estimatedMonthlyRentPln` (median rent per m² of the comparable group × the flat's area, rounded to 10 PLN), `estimatedMonthlyRentEur`, `estimatedGrossYieldPct` (12 × estimated rent ÷ asking price) and `comparable`, the group behind the score (`groupLevel`, `rentGroupLevel`, `district`, `rooms`, `confidence`, `saleCount`, `rentCount`).
+- **Rent rows** have `transaction: "rent"`, the monthly rent and `monthlyRentPerM2Eur`; all sale-side fields are `null`.
+- Where the comparable group has `low` confidence, or too few rentals (below `minRentSample`), the estimate fields are `null` and `estimateNote` says why. The deal score is still returned.
+- Listings with a price far below their group median (`outlier`) are not returned and not charged; `RUN_SUMMARY` counts them per city.
+- Sale rows come first, best deal first, then rent rows. `maxScoredListings` (default 1,000; 0 = all), `minScore` (sale rows only), `rooms` and `areaMin`/`areaMax` apply as in the other modes. **Set `maxScoredListings` to 0 to get every listing.**
+- `RUN_SUMMARY.cities.*.listings` reports `saleRows`, `rentRows`, `withEstimate`, `withoutEstimate`, `scoredExcludedOutliers` and `charged`.
+
+```json
+{"cities": ["krakow"], "mode": "listings", "maxScoredListings": 0}
+```
+
+A sale row (example values):
+
+```json
+{
+  "recordType": "listing", "transaction": "sale",
+  "source": "otodom", "listingId": "12345678", "url": "…/pl/oferta/…",
+  "country": "PL", "city": "Kraków", "district": "Podgórze", "rooms": 2, "areaM2": 48,
+  "price": {"local": 610000, "currency": "PLN", "eur": 142900},
+  "pricePerM2Eur": 2977, "groupMedianPricePerM2Eur": 3420,
+  "dealScore": 87, "discountVsMedianPct": 12.95,
+  "estimatedMonthlyRentPln": 2970, "estimatedMonthlyRentEur": 695, "estimatedGrossYieldPct": 5.84,
+  "estimateNote": null,
+  "comparable": {"groupLevel": "district", "rentGroupLevel": "district", "district": "Podgórze", "rooms": "2",
+                 "confidence": "high", "saleCount": 112, "rentCount": 64},
+  "saleGroupLevel": "district", "rentGroupLevel": "district", "confidence": "high",
+  "daysOnMarket": 38, "flags": [], "identicalListingIds": []
+}
+```
+
+A rent row (example values):
+
+```json
+{
+  "recordType": "listing", "transaction": "rent",
+  "source": "otodom", "listingId": "87654321", "url": "…/pl/oferta/…",
+  "country": "PL", "city": "Kraków", "district": "Podgórze", "rooms": 2, "areaM2": 45,
+  "price": {"local": 3100, "currency": "PLN", "eur": 726},
+  "monthlyRentPerM2Eur": 16.1,
+  "dealScore": null, "estimatedMonthlyRentPln": null, "estimatedGrossYieldPct": null, "comparable": null,
+  "daysOnMarket": 12, "flags": []
+}
+```
 
 ## Example inputs
 
@@ -202,16 +251,16 @@ For schedules we recommend `mode: "scoreListings"`: yield groups follow `mode` i
 
 ## Pricing
 
-Pay per result:
+Pay per result. Prices are for the Free plan; they are lower on higher Apify plans.
 
 | Event | Price | When |
 |---|---|---|
 | Yield group | $0.02 | per `areaYield` record with high or medium confidence |
-| Scored listing | $0.004 | per `scoredListing` record |
+| Listing or scored listing | $0.001 ($1 per 1,000) | per `listing` record (mode `listings`) or `scoredListing` record |
 
 City-level context records (low confidence) are free.
 
-By default a run returns at most 1,000 scored listings, best deals first (`maxScoredListings`; 0 = all). Example from a test run (November 2026, Apify run `3cFnNnMtkzpmtPDIb`): Warsaw and Kraków with default settings returned 109 yield groups, of which 107 were charged ($2.14; the 2 city-level context groups are free), and 1,000 scored listings ($4.00), **$6.14** in total. Kraków alone costs up to about $5. With `maxScoredListings: 0` the default run scores all of its about 5,600 listings (about $24.50 in total).
+By default a run returns at most 1,000 scored listings, best deals first (`maxScoredListings`; 0 = all). Example from a test run (November 2026, Apify run `3cFnNnMtkzpmtPDIb`): Warsaw and Kraków with default settings returned 109 yield groups, of which 107 were charged ($2.14; the 2 city-level context groups are free), and 1,000 scored listings ($1.00), **$3.14** in total. Kraków alone costs up to about $2. With `maxScoredListings: 0` the default run scores all of its about 5,600 listings (about $7.74 in total).
 
 To spend less: `mode: "yieldReport"` returns only the yield groups (about $2 for Warsaw and Kraków); `maxScoredListings`, `minScore` and `rooms` reduce the number of scored listings; and you can set a maximum charge per run. When that maximum is close, the run stops cleanly, staying below it, after delivering free city-level context, the yield groups and the best-scored listings first.
 

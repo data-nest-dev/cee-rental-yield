@@ -726,3 +726,12 @@ Otwarte:
    - **README (2026-11-26):** 12 miast, dwie tabele „Yields by city” z datami i metodą, akapit o lokalach w kafelkach (22% Bydgoszcz – 69% Katowice), przykład pełnego rynku, Roadmap (kolejne: Bielsko-Biała, Gliwice, Częstochowa, Białystok, Toruń).
    - **Otwarte na później:** pobieranie lokali z kafelków inwestycji (dodatkowe zapytania na inwestycję).
 
+
+## 21. Tryb listings i cennik (decyzja 2026-11-26)
+
+1. **Model hybrydowy: oferty + analityka.** Nowy `mode = "listings"` (domyślny `mode` i prefill bez zmian) zwraca jeden wiersz na każdą ofertę, sprzedaż i najem, po wykluczeniach z §14.5 i §20.6 (share, auction, outliers). Wiersze sprzedaży: `dealScore`, `estimatedMonthlyRentPln` (mediana czynszu zł/m² grupy porównawczej × metraż, zaokrąglona do 10 zł), `estimatedMonthlyRentEur`, `estimatedGrossYieldPct`, `comparable`; przy `confidence = low` albo najmie poniżej `minRentSample` szacunki = `null` i `estimateNote`. Wiersze najmu: pola sprzedażowe `null`, `monthlyRentPerM2Eur`. `recordType = "listing"`. Mediany grup liczone jak zawsze; wierszy rentowności nie zapisujemy, `area-yield` nie jest naliczany, `YIELD_REPORT` bez grup.
+2. **Opłaty:** każdy zapisany wiersz = jedno istniejące zdarzenie `scored-listing` (bez nowego zdarzenia). Outliers: nie zwracane, nie naliczane, licznik w `RUN_SUMMARY`. Blokada: miasta ukończone dostarczone i naliczone, reszta `skipped` (§20.6). `maxScoredListings` (domyślnie 1000) obcina też wiersze listings; „wszystkie oferty” = `maxScoredListings: 0`.
+3. **Cennik `scored-listing` (do ustawienia w Console przez właściciela):** FREE $0.001 / BRONZE $0.00095 / SILVER $0.0009 / GOLD $0.00085 (PLATINUM i DIAMOND = GOLD). `area-yield` bez zmian ($0.02 i rabaty z §0.15.15). Obniżka ceny działa od razu (§0.15.6).
+4. **Plan podwyżki:** po ok. 2 miesiącach podnieść `scored-listing` do $1.5–2 za 1000, z 14-dniową zapowiedzią (max 1 zmiana na miesiąc, §0.15.6).
+5. **Przenieść tę samą zmianę (tryb listings i cennik) do `imovirtual-rental-yield`.**
+6. README: cena $1 za 1000 ofert (plan Free); przykład domyślnego uruchomienia przeliczony na $3.14 (107 × $0,02 + 1000 × $0,001), z `maxScoredListings: 0` ok. $7.74; koszt prefillu „ok. $0.60” to szacunek z poprzedniej wartości $1.70 (do potwierdzenia pierwszym runem po zmianie ceny).

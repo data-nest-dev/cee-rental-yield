@@ -6,7 +6,7 @@ from src.fx import convert_to_eur
 from src.models import AreaYield, Listing, ScoredListing
 from src.stats import (
     GroupStats, ListingComparables, deal_score, discount_vs_median_pct, gross_yield_pct,
-    gross_yield_range, median_val, quartiles,
+    gross_yield_range, listing_rooms_bucket, median_val, quartiles,
 )
 
 
@@ -172,3 +172,88 @@ def build_side_summary(
         "sample": sample,
         "timeS": round(time_s, 1),
     }
+
+
+# --- mode "listings": every sale and rent listing with our analytics -------------------------------------------
+
+LISTING_RECORD_TYPE = "listing"
+RENT_ESTIMATE_ROUNDING = 10  # estimatedMonthlyRentPln is rounded to 10 PLN
+NOTE_LOW_CONFIDENCE = "Low-confidence comparable group (city level): no rent or yield estimate."
+NOTE_FEW_RENTS = "Fewer rent listings in the comparable group than minRentSample: no rent or yield estimate."
+
+_SALE_ONLY_NULLS = (
+    "pricePerM2Eur", "groupMedianPricePerM2Eur", "dealScore", "discountVsMedianPct",
+    "estimatedMonthlyRentPln", "estimatedMonthlyRentEur", "estimatedGrossYieldPct", "comparable",
+    "saleGroupLevel", "rentGroupLevel", "confidence", "estimateNote",
+)
+
+
+def build_sale_listing_row(
+    listing: Listing, comparables: ListingComparables, fx_rates: dict[str, float],
+) -> dict:
+    """A scoredListing record turned into a listings row: same deal score, estimate fields renamed and made explicit."""
+    rec = build_scored_listing(listing, comparables, fx_rates)
+    for old in ("recordType", "estimatedRentMonthlyEur", "grossYieldPct"):
+        rec.pop(old)
+    rent_pln = rent_eur = gross = None
+    note = None
+    if comparables.confidence == "low":
+        note = NOTE_LOW_CONFIDENCE
+    elif comparables.rent_level is None:
+        note = NOTE_FEW_RENTS
+    else:
+        rent_per_m2 = median_val([ls.price_local / ls.area_m2 for ls in comparables.rent_listings])
+        step = RENT_ESTIMATE_ROUNDING
+        rent_pln = round(rent_per_m2 * listing.area_m2 / step) * step
+        rent_eur = round(convert_to_eur(rent_pln, listing.currency, fx_rates))
+        gross = round(12 * rent_pln / listing.price_local * 100, 2)
+    sale_level = comparables.sale_level
+    rec.update({
+        "recordType": LISTING_RECORD_TYPE,
+        "transaction": "sale",
+        "estimatedMonthlyRentPln": rent_pln,
+        "estimatedMonthlyRentEur": rent_eur,
+        "estimatedGrossYieldPct": gross,
+        "estimateNote": note,
+        "monthlyRentPerM2Eur": None,
+        "comparable": {
+            "groupLevel": sale_level,
+            "rentGroupLevel": comparables.rent_level,
+            "district": listing.district if sale_level == "district" else None,
+            "rooms": listing_rooms_bucket(listing) if sale_level != "city" else None,
+            "confidence": comparables.confidence,
+            "saleCount": len(comparables.sale_listings),
+            "rentCount": len(comparables.rent_listings),
+        },
+    })
+    return rec
+
+
+def build_rent_listing_row(listing: Listing, fx_rates: dict[str, float]) -> dict:
+    """A rental listing: our own derived fields only; every sale-side field is null."""
+    from datetime import date
+    rent_eur = convert_to_eur(listing.price_local, listing.currency, fx_rates)
+    dom = (date.today() - listing.first_published).days if listing.first_published else None
+    row = {
+        "recordType": LISTING_RECORD_TYPE,
+        "transaction": "rent",
+        "source": listing.source,
+        "listingId": listing.listing_id,
+        "url": listing.url,
+        "country": listing.country,
+        "city": listing.city,
+        "district": listing.district,
+        "rooms": listing.rooms,
+        "areaM2": listing.area_m2,
+        "isPrimaryMarket": listing.is_primary_market,
+        "price": {"local": listing.price_local, "currency": listing.currency, "eur": round(rent_eur)},
+        "monthlyRentPerM2Eur": round(rent_eur / listing.area_m2, 1),
+        "daysOnMarket": dom,
+        "flags": list(listing.flags),
+        "identicalListingIds": [],
+        "firstSeenAt": None,
+        "changeType": None,
+        "priceCutPct": None,
+    }
+    row.update({k: None for k in _SALE_ONLY_NULLS})
+    return row

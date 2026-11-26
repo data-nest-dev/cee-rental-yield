@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 
 from src.config import CITIES, MARKET_ALL, MARKET_SECONDARY
 
-MODES = ("yieldReport", "scoreListings", "both")
+MODES = ("yieldReport", "scoreListings", "both", "listings")
 SAMPLING_MODES = ("perDistrict", "city")
 ROOM_BUCKETS = ("1", "2", "3", "4+")
 STATE_KEY_RE = re.compile(r"^[A-Za-z0-9_.-]{1,100}$")
@@ -52,6 +52,11 @@ class RunInput:
     @property
     def wants_scores(self) -> bool:
         return self.mode in ("scoreListings", "both")
+
+    @property
+    def wants_listings(self) -> bool:
+        """mode listings: one row per sale and rent listing, no yield rows."""
+        return self.mode == "listings"
 
     @property
     def market(self) -> str:

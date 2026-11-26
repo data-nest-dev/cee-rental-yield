@@ -52,17 +52,19 @@
         "mode": {
             "title": "What to return",
             "type": "string",
-            "description": "yieldReport: gross rental yield per district and room count. scoreListings: a 0–100 deal score for every listing for sale. both: both record types.",
+            "description": "listings: every listing for sale and for rent with our analytics (deal score, estimated rent and yield for sales), one row each, no yield rows. yieldReport: gross rental yield per district and room count. scoreListings: a 0–100 deal score for every listing for sale. both: yield report and scored listings. maxScoredListings, minScore and rooms apply to listings rows too (minScore only to sale rows).",
             "editor": "select",
             "enum": [
                 "both",
                 "yieldReport",
-                "scoreListings"
+                "scoreListings",
+                "listings"
             ],
             "enumTitles": [
                 "Yield report and scored listings",
                 "Yield report only",
-                "Scored listings only"
+                "Scored listings only",
+                "Listings – every flat with deal score and estimated yield"
             ],
             "default": "both"
         },

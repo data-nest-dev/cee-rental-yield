@@ -18,7 +18,9 @@ from src.http import BlockedError, HttpClient, PortalBlockedError, ProxyAccessEr
 from src.inputs import ROOM_BUCKETS, InputError, RunInput, is_prefill_run, parse_input
 from src.models import Listing
 from src.monitor import compute_changes, update_state
-from src.output import build_area_yield, build_scored_listing, build_side_summary
+from src.output import (
+    build_area_yield, build_rent_listing_row, build_sale_listing_row, build_scored_listing, build_side_summary,
+)
 from src.sources.otodom import DOMAIN, OtodomSource, parse_otodom_items
 from src.stats import (
     SideCoverage, area_sample, compute_groups, district_group_coverage, gate_coverage,
@@ -67,6 +69,7 @@ class CityOutput:
     scored_excluded_outliers: int
     gate: dict | None
     groups_info: dict | None
+    sale_not_comparable: int = 0  # mode listings: sale listings whose city has too few sales to compare
 
 
 async def fetch_rates(http: HttpClient) -> tuple[dict[str, float], str]:
@@ -161,18 +164,23 @@ def compute_city(city: CityResult, run_input: RunInput, rates: dict[str, float],
 
     scored: list[tuple[Listing, dict]] = []
     excluded_outliers = 0
-    if run_input.wants_scores:
+    not_comparable = 0
+    if run_input.wants_scores or run_input.wants_listings:
         index = index_groups(listings)
         for ls in listings:
-            if ls.transaction != "sale":
-                continue
             rb = listing_rooms_bucket(ls)
             if not all_rooms and rb not in run_input.rooms:
                 continue
+            if ls.transaction != "sale":
+                if run_input.wants_listings:
+                    scored.append((ls, build_rent_listing_row(ls, rates)))
+                continue
             comp = resolve_comparables(ls, index, run_input.min_sale_sample, run_input.min_rent_sample, share)
             if comp is None:
+                not_comparable += 1
                 continue
-            rec = build_scored_listing(ls, comp, rates)
+            build = build_sale_listing_row if run_input.wants_listings else build_scored_listing
+            rec = build(ls, comp, rates)
             if "outlier" in rec["flags"]:
                 # An asking price far below its group median is more likely a data problem than a deal: such
                 # listings are not returned and not charged; they are counted separately.
@@ -186,6 +194,7 @@ def compute_city(city: CityResult, run_input: RunInput, rates: dict[str, float],
         report_groups=report_groups,
         scored=scored,
         scored_excluded_outliers=excluded_outliers,
+        sale_not_comparable=not_comparable,
         gate=gate_coverage(listings, run_input.min_sale_sample, run_input.min_rent_sample).get(city.name),
         groups_info=district_group_coverage(listings, run_input.min_sale_sample, run_input.min_rent_sample).get(city.name),
     )
@@ -264,6 +273,32 @@ def sort_scored(scored: list[tuple[Listing, dict]]) -> list[tuple[Listing, dict]
     dealScore saturates at 100 (many ties), so the discount against the group median breaks ties.
     """
     return sorted(scored, key=lambda item: (-item[1]["dealScore"], -item[1]["discountVsMedianPct"]))
+
+
+def sort_listings(rows: list[tuple[Listing, dict]]) -> list[tuple[Listing, dict]]:
+    """mode listings: sale rows best deal first, then rent rows by city, district and rent per m2."""
+    sale = sort_scored([r for r in rows if r[1]["transaction"] == "sale"])
+    rent = sorted((r for r in rows if r[1]["transaction"] == "rent"),
+                  key=lambda r: (r[1]["city"], r[1]["district"] or "", r[1]["monthlyRentPerM2Eur"]))
+    return sale + rent
+
+
+def listings_city_summary(
+    city_name: str, out: CityOutput, delivered: list[dict], paid: bool,
+) -> dict:
+    """RUN_SUMMARY.cities.*.listings for mode listings; counts are of rows actually written."""
+    rows = [r for r in delivered if r["city"] == city_name]
+    sale = [r for r in rows if r["transaction"] == "sale"]
+    with_estimate = sum(r["estimatedMonthlyRentPln"] is not None for r in sale)
+    return {
+        "saleRows": len(sale),
+        "rentRows": len(rows) - len(sale),
+        "withEstimate": with_estimate,
+        "withoutEstimate": len(sale) - with_estimate,
+        "scoredExcludedOutliers": out.scored_excluded_outliers,
+        "saleNotComparable": out.sale_not_comparable,
+        "charged": len(rows) if paid else 0,
+    }
 
 
 async def run(
@@ -413,9 +448,11 @@ async def _run(
         free_area, charged_area = free_groups, [r for r in all_groups if r["confidence"] in CHARGED_CONFIDENCE]
     else:
         # scoreListings: never charge area-yield; budget mode may add free city-level context to the dataset.
-        free_area, charged_area = (free_groups if summary.get("budgetReduced") else []), []
-    report_only_groups = [] if run_input.wants_yields or free_area else free_groups
-    scored = sort_scored([item for out in outputs.values() for item in out.scored])
+        # mode listings writes no yield rows at all (and keeps them out of YIELD_REPORT).
+        free_area, charged_area = (free_groups if summary.get("budgetReduced") and not run_input.wants_listings else []), []
+    report_only_groups = [] if run_input.wants_yields or free_area or run_input.wants_listings else free_groups
+    all_scored = [item for out in outputs.values() for item in out.scored]
+    scored = sort_listings(all_scored) if run_input.wants_listings else sort_scored(all_scored)
 
     state: dict | None = None
     unchanged: list[tuple[Listing, dict]] = []
@@ -520,11 +557,18 @@ async def _run(
         scoredReturned=pushed_scored,
         events=_events_summary(actor, len(charged_area), pushed_area, len(scored_records), pushed_scored),
     )
+    if run_input.wants_listings:
+        delivered_rows = scored_records[:pushed_scored]
+        for key, out in outputs.items():
+            summary["cities"][key]["listings"] = listings_city_summary(
+                CITIES[key].display_name, out, delivered_rows, bool(summary.get("isPayPerEvent")))
     if limit_reached:
         summary["note"] = (f"Stopped below the run's maximum charge: {pushed_area} of {len(charged_area)} yield groups "
                            f"and {pushed_scored} of {len(scored_records)} scored listings were delivered (best deals first).")
     await save_summary(actor, summary, started)
     message = f"{len(outputs)} cities, {pushed_free + pushed_area} yield groups, {pushed_scored} scored listings"
+    if run_input.wants_listings:
+        message = f"{len(outputs)} cities, {pushed_scored} listings"
     if summary.get("budgetReduced"):
         message = f"Reduced sample (max charge too low for the requested scope). {message}"
     if limit_reached:
