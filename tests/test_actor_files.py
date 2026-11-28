@@ -43,7 +43,7 @@ def test_default_and_prefill_proxy_name_no_group() -> None:
 
 def test_actor_title_and_description_do_not_advertise_katowice() -> None:
     actor = _load("actor.json")
-    assert actor["title"] == "Poland Rental Yield & Property Deal Score"
+    assert actor["title"] == "Otodom Scraper with Rental Yield & Deal Score – Poland"
     assert "Katowice" not in actor["description"] and "scraper" not in actor["description"].lower()
 
 

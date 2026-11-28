@@ -155,4 +155,6 @@ def test_readme_rules() -> None:
     text = (Path(__file__).parent.parent / "README.md").read_text()
     domains = set(re.findall(r"https?://([^/\s)\"]+)", text))
     assert all(d == "apify.com" or d.endswith(".apify.com") for d in domains), domains
-    assert len(re.findall(r"(?i)scraper", text)) == 0
+    heading, body = text.split("\n", 1)
+    assert heading == "# Otodom Scraper with Rental Yield & Deal Score – Poland"  # the only place the word is allowed
+    assert len(re.findall(r"(?i)scraper", body)) == 0

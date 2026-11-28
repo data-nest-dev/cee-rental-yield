@@ -1,7 +1,7 @@
 {
     "actorSpecification": 1,
     "name": "cee-rental-yield",
-    "title": "Poland Rental Yield & Property Deal Score",
+    "title": "Otodom Scraper with Rental Yield & Deal Score – Poland",
     "description": "Gross rental yield by district and a 0–100 deal score for every Otodom flat for sale in Warsaw, Kraków, Wrocław, Łódź, Poznań and Gdańsk. EUR and PLN. For buy-to-let investors, analysts and AI agents.",
     "version": "0.1",
     "buildTag": "latest",

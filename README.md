@@ -1,4 +1,4 @@
-# Otodom Rental Yield & Deal Score – Poland
+# Otodom Scraper with Rental Yield & Deal Score – Poland
 
 This Actor calculates the price per m² by district and the gross rental yield by district and room count, and gives every flat for sale a deal score, using Otodom listings for 12 cities: Warsaw, Kraków, Wrocław, Łódź, Poznań, Gdańsk, Katowice, Szczecin, Gdynia, Rzeszów, Lublin and Bydgoszcz. Prices are in EUR and PLN. Use it for rental yield in Poland, price per m² by district and spotting flats priced below their neighbourhood, whether you are a buy-to-let investor or an analyst. One run samples apartments for sale and for long-term rent and returns:
 
@@ -30,7 +30,7 @@ Data from 2026-11-23, asking prices; an excerpt of the 20 groups returned for Ł
 3. Click **Start**.
 4. Download the results as Excel, CSV or JSON from the Output tab. Yield groups are in the `yields` dataset, except in `yieldReport` mode, where they are in the default dataset.
 
-The first run with the default example (prefill: Warsaw, the 360 newest listings) costs about $0.60 and takes under a minute.
+The first run with the default example (prefill: Warsaw, the 360 newest listings) takes under a minute.
 
 ## What you get
 
@@ -263,9 +263,9 @@ Pay per result. Prices are for the Free plan; they are lower on higher Apify pla
 
 City-level context records (low confidence) are free.
 
-By default a run returns at most 1,000 scored listings, best deals first (`maxScoredListings`; 0 = all). Example from a test run (November 2026, Apify run `3cFnNnMtkzpmtPDIb`): Warsaw and Kraków with default settings returned 109 yield groups, of which 107 were charged ($2.14; the 2 city-level context groups are free), and 1,000 scored listings ($1.00), **$3.14** in total. Kraków alone costs up to about $2. With `maxScoredListings: 0` the default run scores all of its about 5,600 listings (about $7.74 in total).
+By default a run returns at most 1,000 scored listings, best deals first (`maxScoredListings`; 0 = all). Example from a test run (November 2026, Apify run `3cFnNnMtkzpmtPDIb`): Warsaw and Kraków with default settings returned 109 yield groups, of which 107 were charged ($2.14; the 2 city-level context groups are free), and 1,000 scored listings ($1.00), **$3.14** in total. With `maxScoredListings: 0` the default run scores all of its listings. A measured example in `listings` mode (26 November 2026): the full market of Rzeszów returned 1,935 rows (1,542 for sale and 393 for rent) with 53 requests in about 94 seconds, which is **$1.94** at the Free plan price ($0.001 per row).
 
-To spend less: `mode: "yieldReport"` returns only the yield groups (about $2 for Warsaw and Kraków); `maxScoredListings`, `minScore` and `rooms` reduce the number of scored listings; and you can set a maximum charge per run. When that maximum is close, the run stops cleanly, staying below it, after delivering free city-level context, the yield groups and the best-scored listings first.
+To spend less: `mode: "yieldReport"` returns only the yield groups; `maxScoredListings`, `minScore` and `rooms` reduce the number of scored listings; and you can set a maximum charge per run. When that maximum is close, the run stops cleanly, staying below it, after delivering free city-level context, the yield groups and the best-scored listings first.
 
 **Very low maximum charge.** The Actor collects the whole sample before it returns any result. If your maximum charge per run is too low to justify that (below about $0.03 with default settings), the run uses a smaller sample instead: the first city in your list, the 360 newest listings for sale and for rent, whole-city comparison. The run still succeeds and returns free city-level context plus what your limit covers (for example 9 scored listings at $0.01), never an event type you did not ask for, and `RUN_SUMMARY` shows `budgetReduced: true`. **Recommended minimum for the default run: $0.05.**
 

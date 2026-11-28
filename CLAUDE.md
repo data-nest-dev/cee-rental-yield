@@ -736,3 +736,9 @@ Otwarte:
 5. **Przenieść tę samą zmianę (tryb listings i cennik) do `imovirtual-rental-yield`.**
 6. README: cena $1 za 1000 ofert (plan Free); przykład domyślnego uruchomienia przeliczony na $3.14 (107 × $0,02 + 1000 × $0,001), z `maxScoredListings: 0` ok. $7.74; koszt prefillu „ok. $0.60” to szacunek z poprzedniej wartości $1.70 (do potwierdzenia pierwszym runem po zmianie ceny).
 7. **Poprawki po runie testowym (2026-11-27).** Tryb listings: per miasto sprzedaż i najem przeplatane proporcjonalnie w kolejności portalu (najnowsze pierwsze; `scoreListings` nadal „najlepsze okazje najpierw”), komunikaty i `RUN_SUMMARY.note` mówią o listings i podają sale/rent dostarczone vs dostępne. Flaga `large_discount` (rabat > 30% względem mediany grupy) w `scoredListing` i wierszach listings. `isPrimaryMarket` bez zmian: `false` tylko przy `market=SECONDARY` (pewne), `true` przy `developmentId > 0`, w pozostałych przypadkach `null`, bo przy `market=ALL` żadne pole nie rozróżnia rynków (§6.1).
+
+## 22. Decyzje właściciela 2026-11-28
+
+1. Słowo „Scraper” jest dozwolone w Title i SEO title (w repo: H1 README i `title` w `.actor/actor.json`: „Otodom Scraper with Rental Yield & Deal Score – Poland”); w pozostałych tekstach nadal go unikamy. `name`, slug i tytuł formularza w input schema bez zmian. Zastępuje tytuł z §0.15.4 i §0.15.13 oraz zakaz z §0.15.4 w zakresie Title i SEO title.
+2. Kategorie w Store nadaje Apify automatycznie – nie ustawiamy.
+3. Kwoty w README tylko z pomiarów.
